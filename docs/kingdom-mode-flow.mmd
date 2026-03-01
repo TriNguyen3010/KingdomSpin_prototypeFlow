@@ -1,0 +1,82 @@
+flowchart TB
+    Start([Player enters Kingdom mode])
+    Home[Home Screen / Kingdom Map]
+    UniversalBtn[Tap Universal button]
+    BuildingBtn[Tap Building button]
+    NodeTap[Tap current or cleared node]
+
+    Start --> Home
+    Home --> UniversalBtn
+    Home --> BuildingBtn
+    Home --> NodeTap
+
+    subgraph U[Universal Panel]
+        UOpen[Open panel with horizontal scroll]
+        UClick{Region clicked}
+        UUnlocked[Region unlocked]
+        ULocked[Region locked]
+        UHint[Show unlock hint popup]
+    end
+
+    UniversalBtn --> UOpen
+    UOpen --> UClick
+    UClick -->|Unlocked| UUnlocked
+    UUnlocked --> Travel["travelToRegion(idx)"]
+    UClick -->|Locked| ULocked
+    ULocked --> UHint
+    UHint --> UOpen
+    Travel --> Home
+
+    subgraph S[Kingdom Slot]
+        SEnter[Enter Kingdom Slot]
+        Spin[Press SPIN]
+        Eval[Apply spin result: +coins +power]
+        Goal{Node goal reached?}
+        KeepNode[Stay on current node]
+        NodeClear[Clear node: +1 crown]
+        BossCheck{Boss node and region cleared?}
+        RegionUnlock[Unlock next region + next castle]
+        PostPopup[Show clear popup]
+    end
+
+    NodeTap --> SEnter --> Spin --> Eval --> Goal
+    Goal -->|No| KeepNode --> SEnter
+    Goal -->|Yes| NodeClear --> BossCheck
+    BossCheck -->|Yes| RegionUnlock --> PostPopup --> Home
+    BossCheck -->|No| PostPopup --> Home
+
+    subgraph B[Building Screen]
+        BEnter[Open Building]
+        ArrowTap[Tap prev/next castle arrow]
+        CastleCheck{Target castle unlocked?}
+        CastleHint["Show castle unlock hint<br>Defeat previous region boss"]
+        CastleView[Show castle + 4 build slots]
+        UpgradeTap[Tap upgrade slot]
+        CrownCheck{Enough crowns?}
+        CrownFail[Show not enough crowns]
+        UpgradeOK[Upgrade slot level]
+        CompleteCheck{Castle completed?}
+        ClaimState[Top bonus card becomes claimable]
+        ClaimTap[Tap claim bonus]
+        ClaimDone["Award completion bonus<br>Set completionClaimed=true"]
+    end
+
+    BuildingBtn --> BEnter
+    BEnter --> ArrowTap
+    ArrowTap --> CastleCheck
+    CastleCheck -->|No| CastleHint
+    CastleHint --> BEnter
+    CastleCheck -->|Yes| CastleView
+    CastleView --> UpgradeTap
+    UpgradeTap --> CrownCheck
+    CrownCheck -->|No| CrownFail
+    CrownFail --> CastleView
+    CrownCheck -->|Yes| UpgradeOK
+    UpgradeOK --> CompleteCheck
+    CompleteCheck -->|No| CastleView
+    CompleteCheck -->|Yes and unclaimed| ClaimState
+    ClaimState --> ClaimTap
+    ClaimTap --> ClaimDone
+    ClaimDone --> CastleView
+
+    BEnter --> BackHome[Back to Home] --> Home

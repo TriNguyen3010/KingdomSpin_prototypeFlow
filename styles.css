@@ -267,7 +267,7 @@ body {
 .galaxy-panel {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   padding: 24px 20px 16px;
   height: 100%;
   box-sizing: border-box;
@@ -287,6 +287,7 @@ body {
   background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: shimmer 3s linear infinite;
+  align-self: center;
 }
 
 @keyframes shimmer {
@@ -300,15 +301,40 @@ body {
 }
 
 .galaxy-svg {
+  display: block;
+  width: auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.galaxy-scroll {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
   background: radial-gradient(ellipse at 30% 50%, rgba(88, 28, 135, 0.25), transparent 70%),
     radial-gradient(ellipse at 80% 30%, rgba(14, 116, 144, 0.15), transparent 60%),
     rgba(5, 5, 18, 0.95);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  display: block;
-  width: 100%;
-  flex: 1;
-  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 85, 247, 0.45) rgba(255, 255, 255, 0.08);
+}
+
+.galaxy-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.galaxy-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+
+.galaxy-scroll::-webkit-scrollbar-thumb {
+  background: rgba(168, 85, 247, 0.5);
+  border-radius: 8px;
 }
 
 /* Animated dashed lines */
@@ -369,6 +395,7 @@ body {
   cursor: pointer;
   transition: all 0.2s;
   letter-spacing: 1px;
+  align-self: center;
 }
 
 .galaxy-close-btn:hover {
@@ -602,6 +629,11 @@ body {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.menu-item.demo-tooltip {
+  position: relative;
+  cursor: help;
+}
+
 /* --- SLOT MODALS --- */
 .slot-screen {
   background: radial-gradient(circle at center, #1e1b4b 0%, #000 100%);
@@ -676,6 +708,61 @@ body {
   letter-spacing: 20px;
 }
 
+.kingdom-slot-machine,
+.casino-slot-machine {
+  width: min(600px, 92vw);
+  height: min(300px, 46vw);
+  min-height: 240px;
+  display: flex;
+  overflow: hidden;
+  border: 4px solid var(--slot-accent, var(--gold));
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 50% 15%, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0)),
+    rgba(0, 0, 0, 0.58);
+  box-shadow: 0 0 30px var(--slot-glow, rgba(251, 191, 36, 0.2)), inset 0 0 50px rgba(0, 0, 0, 0.8);
+  margin-bottom: 30px;
+}
+
+.kingdom-slot-machine .k-reel,
+.casino-slot-machine .c-reel {
+  width: 20%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.kingdom-slot-machine .k-reel:last-child,
+.casino-slot-machine .c-reel:last-child {
+  border-right: 0;
+}
+
+.kingdom-slot-machine .k-reel>.icons,
+.casino-slot-machine .c-reel>.icons {
+  position: relative;
+  will-change: transform;
+}
+
+.kingdom-slot-machine .slot-symbol,
+.casino-slot-machine .slot-symbol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(2rem, 3vw, 3rem);
+  line-height: 1;
+  text-shadow: 0 6px 12px rgba(0, 0, 0, 0.5);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+}
+
+.kingdom-slot-machine.inverted .k-reel {
+  transform: scaleY(-1);
+}
+
+.kingdom-slot-machine.inverted .slot-symbol {
+  transform: scaleY(-1);
+}
+
 .bet-controls {
   display: flex;
   align-items: center;
@@ -692,6 +779,11 @@ body {
   color: white;
   font-size: 1.5rem;
   cursor: pointer;
+}
+
+.bet-controls button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .bet-amount {
@@ -1343,142 +1435,212 @@ body {
 }
 
 /* --- Castle Plot System (Region-based) --- */
-.castle-hud.castle-hud-compact {
-  grid-template-columns: 68px 1fr;
-}
-
-.castle-region-pill {
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.82), rgba(29, 78, 216, 0.95));
-  border: 2px solid rgba(147, 197, 253, 0.8);
-  color: #eff6ff;
-  border-radius: 999px;
-  padding: 10px 20px;
-  font-weight: 900;
-  letter-spacing: 0.3px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 20px rgba(0, 0, 0, 0.35);
-}
-
-.castle-region-nav {
+.castle-topbar {
   display: grid;
-  grid-template-columns: 56px 44px 1fr 44px auto;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.castle-top-side {
+  display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.castle-region-tabs {
-  display: flex;
-  justify-content: flex-start;
-  gap: 8px;
-  flex-wrap: wrap;
+.castle-top-left {
+  justify-self: start;
 }
 
-.castle-region-tab {
+.castle-top-right {
+  justify-self: end;
+}
+
+.castle-ui-btn {
   appearance: none;
-  border: 1px solid rgba(148, 163, 184, 0.55);
-  background: rgba(15, 23, 42, 0.78);
-  color: #cbd5e1;
-  border-radius: 999px;
-  padding: 6px 11px;
-  font-size: 0.76rem;
-  font-weight: 800;
-  cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.castle-region-tab:hover {
-  transform: translateY(-1px);
-  border-color: rgba(251, 191, 36, 0.75);
-}
-
-.castle-region-tab.active {
-  color: #fef3c7;
-  border-color: rgba(251, 191, 36, 0.9);
-  background: linear-gradient(180deg, rgba(245, 158, 11, 0.38), rgba(30, 41, 59, 0.9));
-}
-
-.castle-region-arrow {
-  appearance: none;
-  border: 1px solid rgba(148, 163, 184, 0.6);
-  background: rgba(15, 23, 42, 0.85);
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  border: 2px solid rgba(148, 163, 184, 0.45);
+  background: linear-gradient(180deg, rgba(30, 64, 175, 0.82), rgba(15, 23, 42, 0.96));
   color: #e2e8f0;
-  border-radius: 12px;
-  width: 44px;
-  height: 44px;
+  font-size: 1.3rem;
   font-weight: 900;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 12px 22px rgba(0, 0, 0, 0.35);
+  transition: transform 0.18s ease, border-color 0.18s ease, filter 0.18s ease;
 }
 
-.castle-region-arrow:disabled {
-  opacity: 0.45;
+.castle-ui-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(191, 219, 254, 0.82);
+  filter: brightness(1.08);
+}
+
+.castle-ui-btn:disabled {
+  opacity: 0.38;
   cursor: not-allowed;
+  filter: grayscale(0.25);
+}
+
+.castle-home-btn {
+  border-color: rgba(147, 197, 253, 0.72);
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.92), rgba(29, 78, 216, 0.96));
+}
+
+.castle-top-center-cluster {
+  justify-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.castle-pill-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.castle-bonus-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  width: 100%;
+}
+
+.castle-region-pill {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.82), rgba(29, 78, 216, 0.95));
+  border: 2px solid rgba(147, 197, 253, 0.82);
+  color: #eff6ff;
+  border-radius: 999px;
+  padding: 10px 22px;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 10px 20px rgba(0, 0, 0, 0.35);
+}
+
+.castle-progress-wheel-mini {
+  width: 78px;
+  height: 78px;
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.32);
+  margin-right: -18px;
+  z-index: 2;
+}
+
+.castle-progress-wheel-mini::before {
+  inset: 9px;
+}
+
+.castle-progress-wheel-mini span {
+  font-size: 1.5rem;
 }
 
 .castle-bonus-card {
   border-radius: 18px;
   border: 1px solid rgba(148, 163, 184, 0.45);
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.8), rgba(15, 23, 42, 0.94));
-  padding: 12px 16px;
+  padding: 8px 12px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  justify-content: flex-start;
+  gap: 8px;
 }
 
-.castle-bonus-card-compact {
-  padding: 8px 12px;
-  border-radius: 14px;
-  gap: 10px;
-  justify-self: end;
+.castle-bonus-card-floating {
+  width: auto;
+  min-width: 0;
+  max-width: 430px;
+  border-radius: 16px;
+  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  padding-left: 26px;
 }
 
 .castle-bonus-value {
   color: #fef3c7;
-  font-size: 0.84rem;
+  font-size: 0.88rem;
   font-weight: 800;
+  white-space: nowrap;
 }
 
-.castle-bonus-state {
+.castle-bonus-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  margin-left: 2px;
+}
+
+.castle-bonus-icon,
+.castle-bonus-claim-btn {
+  width: 30px;
+  height: 30px;
   border-radius: 999px;
-  padding: 4px 9px;
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.3px;
-  border: 1px solid rgba(148, 163, 184, 0.55);
-  color: #cbd5e1;
-}
-
-.castle-bonus-card.pending .castle-bonus-state {
-  background: rgba(245, 158, 11, 0.2);
-  border-color: rgba(251, 191, 36, 0.8);
-  color: #fde68a;
-}
-
-.castle-bonus-card.claimed .castle-bonus-state {
-  background: rgba(16, 185, 129, 0.22);
-  border-color: rgba(16, 185, 129, 0.75);
-  color: #6ee7b7;
-}
-
-.castle-bonus-card.locked .castle-bonus-state {
-  background: rgba(71, 85, 105, 0.35);
-}
-
-.castle-hud-center-compact {
-  justify-content: center;
-}
-
-.castle-level-inline {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 84px;
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  border-radius: 999px;
-  padding: 8px 12px;
-  color: #e2e8f0;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 900;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: rgba(15, 23, 42, 0.7);
+  color: #cbd5e1;
+}
+
+.castle-bonus-claim-btn {
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.castle-bonus-claim-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+}
+
+.castle-bonus-card.pending .castle-bonus-icon {
+  color: #cbd5e1;
+}
+
+.castle-bonus-card.claimable .castle-bonus-claim-btn {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.92), rgba(180, 83, 9, 0.95));
+  border-color: rgba(251, 191, 36, 0.9);
+  color: #fff7ed;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.5);
+  animation: castleBonusPulse 1.2s ease-in-out infinite;
+}
+
+.castle-bonus-card.claimed .castle-bonus-icon {
+  color: #6ee7b7;
+  border-color: rgba(16, 185, 129, 0.7);
+}
+
+.castle-bonus-card.locked .castle-bonus-icon {
+  color: #94a3b8;
+}
+
+@keyframes castleBonusPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.45);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.72);
+  }
+}
+
+.castle-shell-completed {
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.08), rgba(15, 23, 42, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.32), 0 0 34px rgba(45, 212, 191, 0.2);
+}
+
+.castle-plot-grid-completed {
+  border-radius: 22px;
+  padding: 10px;
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.08), rgba(15, 23, 42, 0.04));
+  box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.28);
 }
 
 .build-objects-container.castle-plot-grid {
@@ -1549,19 +1711,6 @@ body {
   max-width: 520px;
 }
 
-.castle-complete-banner {
-  align-self: center;
-  justify-self: center;
-  background: linear-gradient(180deg, #fbbf24, #f59e0b);
-  border: 2px solid rgba(254, 240, 138, 0.9);
-  border-radius: 999px;
-  color: #422006;
-  font-weight: 900;
-  letter-spacing: 0.35px;
-  padding: 10px 20px;
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.35);
-}
-
 .spin-btn:disabled {
   opacity: 0.65;
   cursor: not-allowed;
@@ -1570,17 +1719,57 @@ body {
 }
 
 @media (max-width: 980px) {
-  .castle-hud.castle-hud-compact {
-    grid-template-columns: 56px 1fr;
+  .castle-topbar {
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
   }
 
-  .castle-region-nav {
-    grid-template-columns: 56px 38px 1fr 38px;
+  .castle-top-side {
+    gap: 8px;
   }
 
-  .castle-bonus-card-compact {
-    grid-column: 1 / -1;
-    justify-self: stretch;
+  .castle-ui-btn {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    font-size: 1.1rem;
+  }
+
+  .castle-top-center-cluster {
+    width: auto;
+    gap: 8px;
+  }
+
+  .castle-region-pill {
+    padding: 8px 15px;
+    font-size: 0.88rem;
+  }
+
+  .castle-progress-wheel-mini {
+    width: 62px;
+    height: 62px;
+    margin-right: -10px;
+  }
+
+  .castle-progress-wheel-mini::before {
+    inset: 8px;
+  }
+
+  .castle-progress-wheel-mini span {
+    font-size: 1.2rem;
+  }
+
+  .castle-bonus-card-floating {
+    max-width: 100%;
+    padding-left: 18px;
+  }
+
+  .castle-bonus-card {
+    gap: 6px;
+  }
+
+  .castle-bonus-value {
+    font-size: 0.78rem;
   }
 
   .build-objects-container.castle-plot-grid {

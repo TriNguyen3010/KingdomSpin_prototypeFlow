@@ -22,8 +22,10 @@ function createRegionCastle() {
 function createInitialRegions() {
     return [
         { id: 'home', name: '🏠 Home', icon: '🏠', unlocked: true, nodes: 3 },
-        { id: 'desert', name: '🏜 Desert', icon: '🏜', unlocked: false, nodes: 3 },
-        { id: 'snow', name: '❄ Snow', icon: '❄️', unlocked: false, nodes: 3 }
+        { id: 'forest', name: '🌲 Forest', icon: '🌲', unlocked: false, nodes: 4 },
+        { id: 'desert', name: '🏜 Desert', icon: '🏜', unlocked: false, nodes: 4 },
+        { id: 'snow', name: '❄ Snow', icon: '❄️', unlocked: false, nodes: 4 },
+        { id: 'volcano', name: '🌋 Volcano', icon: '🌋', unlocked: false, nodes: 4 }
     ].map((region, idx) => {
         const castle = createRegionCastle();
         if (idx === 0) castle.unlocked = true; // Home building is available from start
@@ -35,6 +37,30 @@ function createInitialRegions() {
         };
     });
 }
+
+const KINGDOM_MAP_THEMES = {
+    home: { border: '#38bdf8', glow: 'rgba(56,189,248,0.55)', bg: 'rgba(12,74,110,0.2)', bossBorder: '#f87171' },
+    forest: { border: '#22c55e', glow: 'rgba(34,197,94,0.55)', bg: 'rgba(20,83,45,0.2)', bossBorder: '#f87171' },
+    desert: { border: '#f59e0b', glow: 'rgba(245,158,11,0.55)', bg: 'rgba(120,53,15,0.22)', bossBorder: '#f87171' },
+    snow: { border: '#67e8f9', glow: 'rgba(103,232,249,0.55)', bg: 'rgba(14,116,144,0.2)', bossBorder: '#f87171' },
+    volcano: { border: '#ef4444', glow: 'rgba(239,68,68,0.55)', bg: 'rgba(127,29,29,0.24)', bossBorder: '#fb7185' }
+};
+
+const KINGDOM_SLOT_THEMES = {
+    home: { accent: '#38bdf8', reelBorder: '#38bdf8', reelGlow: 'rgba(56,189,248,0.25)' },
+    forest: { accent: '#22c55e', reelBorder: '#22c55e', reelGlow: 'rgba(34,197,94,0.25)' },
+    desert: { accent: '#f59e0b', reelBorder: '#f59e0b', reelGlow: 'rgba(245,158,11,0.25)' },
+    snow: { accent: '#67e8f9', reelBorder: '#67e8f9', reelGlow: 'rgba(103,232,249,0.25)' },
+    volcano: { accent: '#ef4444', reelBorder: '#ef4444', reelGlow: 'rgba(239,68,68,0.25)' }
+};
+
+const UNIVERSAL_REGION_COLORS = {
+    home: '#38bdf8',
+    forest: '#22c55e',
+    desert: '#f59e0b',
+    snow: '#67e8f9',
+    volcano: '#ef4444'
+};
 
 function isRegionCleared(region) {
     return region.clearedNodes >= region.nodes;
@@ -76,6 +102,11 @@ const state = {
     regions: createInitialRegions(),
     currentRegionIdx: 0,
     buildingRegionIdx: 0,
+    casinoBet: 1000,
+    casinoSlotEngine: null,
+    casinoSpinBusy: false,
+    kingdomSlotEngine: null,
+    kingdomSpinBusy: false,
 
     universalOpen: false,
 
@@ -97,15 +128,380 @@ const state = {
     ]
 };
 
+const KINGDOM_SLOT_SYMBOLS = ['crown', 'shield', 'sword', 'gem', 'leaf', 'hammer', 'helm'];
+const KINGDOM_SLOT_SYMBOL_MAP = {
+    crown: '👑',
+    shield: '🛡️',
+    sword: '⚔️',
+    gem: '💎',
+    leaf: '🍀',
+    hammer: '🔨',
+    helm: '🪖'
+};
+
+const CASINO_SLOT_SYMBOLS = ['seven', 'diamond', 'crown', 'bell', 'bar', 'star', 'cherry'];
+const CASINO_SLOT_SYMBOL_MAP = {
+    seven: '7️⃣',
+    diamond: '💎',
+    crown: '👑',
+    bell: '🔔',
+    bar: '🟦',
+    star: '⭐',
+    cherry: '🍒'
+};
+
+class CasinoSlotSymbol {
+    constructor(name = CasinoSlotSymbol.random(CASINO_SLOT_SYMBOLS)) {
+        this.name = name;
+        this.el = document.createElement('div');
+        this.el.className = 'slot-symbol';
+        this.el.textContent = CASINO_SLOT_SYMBOL_MAP[name] || '❔';
+    }
+
+    static random(symbols) {
+        return symbols[Math.floor(Math.random() * symbols.length)];
+    }
+}
+
+class CasinoReel {
+    constructor(reelContainer, idx, initialSymbols, symbols) {
+        this.reelContainer = reelContainer;
+        this.idx = idx;
+        this.symbols = symbols;
+        this.symbolContainer = document.createElement('div');
+        this.symbolContainer.classList.add('icons');
+        this.reelContainer.appendChild(this.symbolContainer);
+        initialSymbols.forEach((symbol) => this.symbolContainer.appendChild(this.createSymbolEl(symbol)));
+    }
+
+    get factor() {
+        return 1 + Math.pow(this.idx / 2, 2);
+    }
+
+    createSymbolEl(name) {
+        const symbol = new CasinoSlotSymbol(name);
+        const cellHeight = this.reelContainer.clientHeight / 3;
+        symbol.el.style.height = `${cellHeight}px`;
+        return symbol.el;
+    }
+
+    renderSymbols(nextSymbols) {
+        const rounds = Math.floor(this.factor) * 7;
+        const fragment = document.createDocumentFragment();
+
+        for (let i = 0; i < rounds; i++) {
+            const name = i >= rounds - 3
+                ? nextSymbols[i - (rounds - 3)]
+                : CasinoSlotSymbol.random(this.symbols);
+            fragment.appendChild(this.createSymbolEl(name));
+        }
+
+        this.symbolContainer.appendChild(fragment);
+        return rounds;
+    }
+
+    spin(rounds) {
+        const symbolHeight = this.reelContainer.clientHeight / 3;
+        const shiftPx = rounds * symbolHeight;
+        const animation = this.symbolContainer.animate(
+            [
+                { transform: 'translateY(0px)', filter: 'blur(0px)' },
+                { filter: 'blur(2px)', offset: 0.5 },
+                { transform: `translateY(-${shiftPx}px)`, filter: 'blur(0px)' }
+            ],
+            {
+                duration: this.factor * 550,
+                easing: 'ease-in-out'
+            }
+        );
+
+        const animationPromise = new Promise((resolve) => {
+            animation.onfinish = resolve;
+        });
+        const timeoutPromise = new Promise((resolve) => {
+            setTimeout(resolve, this.factor * 580);
+        });
+
+        return Promise.race([animationPromise, timeoutPromise]).then(() => {
+            if (animation.playState !== 'finished') animation.finish();
+            for (let i = 0; i < rounds; i++) {
+                if (this.symbolContainer.firstChild) this.symbolContainer.firstChild.remove();
+            }
+        });
+    }
+}
+
+class CasinoSlotEngine {
+    constructor(domElement, config = {}) {
+        this.container = domElement;
+        this.symbols = config.symbols || CASINO_SLOT_SYMBOLS;
+        this.currentSymbols = Array.from({ length: 5 }, () => [
+            CasinoSlotSymbol.random(this.symbols),
+            CasinoSlotSymbol.random(this.symbols),
+            CasinoSlotSymbol.random(this.symbols)
+        ]);
+        this.nextSymbols = this.currentSymbols.map((col) => [...col]);
+        this.reels = Array.from(this.container.getElementsByClassName('c-reel')).map(
+            (reelContainer, idx) => new CasinoReel(reelContainer, idx, this.currentSymbols[idx], this.symbols)
+        );
+        this._spinning = false;
+    }
+
+    spin() {
+        if (this._spinning) return Promise.resolve(this.nextSymbols);
+        this._spinning = true;
+
+        this.currentSymbols = this.nextSymbols;
+        this.nextSymbols = Array.from({ length: 5 }, () => [
+            CasinoSlotSymbol.random(this.symbols),
+            CasinoSlotSymbol.random(this.symbols),
+            CasinoSlotSymbol.random(this.symbols)
+        ]);
+
+        return Promise.all(
+            this.reels.map((reel) => {
+                const rounds = reel.renderSymbols(this.nextSymbols[reel.idx]);
+                return reel.spin(rounds);
+            })
+        ).then(() => {
+            this._spinning = false;
+            return this.nextSymbols;
+        }).catch((err) => {
+            this._spinning = false;
+            throw err;
+        });
+    }
+}
+
+class KingdomSlotSymbol {
+    constructor(name = KingdomSlotSymbol.random(KINGDOM_SLOT_SYMBOLS)) {
+        this.name = name;
+        this.el = document.createElement('div');
+        this.el.className = 'slot-symbol';
+        this.el.textContent = KINGDOM_SLOT_SYMBOL_MAP[name] || '❔';
+    }
+
+    static random(symbols) {
+        return symbols[Math.floor(Math.random() * symbols.length)];
+    }
+}
+
+class KingdomReel {
+    constructor(reelContainer, idx, initialSymbols, symbols) {
+        this.reelContainer = reelContainer;
+        this.idx = idx;
+        this.symbols = symbols;
+        this.symbolContainer = document.createElement('div');
+        this.symbolContainer.classList.add('icons');
+        this.reelContainer.appendChild(this.symbolContainer);
+        initialSymbols.forEach((symbol) => this.symbolContainer.appendChild(this.createSymbolEl(symbol)));
+    }
+
+    get factor() {
+        return 1 + Math.pow(this.idx / 2, 2);
+    }
+
+    createSymbolEl(name) {
+        const symbol = new KingdomSlotSymbol(name);
+        const cellHeight = this.reelContainer.clientHeight / 3;
+        symbol.el.style.height = `${cellHeight}px`;
+        return symbol.el;
+    }
+
+    renderSymbols(nextSymbols) {
+        const rounds = Math.floor(this.factor) * 7;
+        const fragment = document.createDocumentFragment();
+
+        for (let i = 0; i < rounds; i++) {
+            const name = i >= rounds - 3
+                ? nextSymbols[i - (rounds - 3)]
+                : KingdomSlotSymbol.random(this.symbols);
+            fragment.appendChild(this.createSymbolEl(name));
+        }
+
+        this.symbolContainer.appendChild(fragment);
+        return rounds;
+    }
+
+    spin(rounds) {
+        const symbolHeight = this.reelContainer.clientHeight / 3;
+        const shiftPx = rounds * symbolHeight;
+        const animation = this.symbolContainer.animate(
+            [
+                { transform: 'translateY(0px)', filter: 'blur(0px)' },
+                { filter: 'blur(2px)', offset: 0.5 },
+                { transform: `translateY(-${shiftPx}px)`, filter: 'blur(0px)' }
+            ],
+            {
+                duration: this.factor * 550,
+                easing: 'ease-in-out'
+            }
+        );
+
+        const animationPromise = new Promise((resolve) => {
+            animation.onfinish = resolve;
+        });
+        const timeoutPromise = new Promise((resolve) => {
+            setTimeout(resolve, this.factor * 580);
+        });
+
+        return Promise.race([animationPromise, timeoutPromise]).then(() => {
+            if (animation.playState !== 'finished') animation.finish();
+            for (let i = 0; i < rounds; i++) {
+                if (this.symbolContainer.firstChild) this.symbolContainer.firstChild.remove();
+            }
+        });
+    }
+}
+
+class KingdomSlotEngine {
+    constructor(domElement, config = {}) {
+        this.container = domElement;
+        this.symbols = config.symbols || KINGDOM_SLOT_SYMBOLS;
+        this.currentSymbols = Array.from({ length: 5 }, () => [
+            KingdomSlotSymbol.random(this.symbols),
+            KingdomSlotSymbol.random(this.symbols),
+            KingdomSlotSymbol.random(this.symbols)
+        ]);
+        this.nextSymbols = this.currentSymbols.map((col) => [...col]);
+        this.reels = Array.from(this.container.getElementsByClassName('k-reel')).map(
+            (reelContainer, idx) => new KingdomReel(reelContainer, idx, this.currentSymbols[idx], this.symbols)
+        );
+        this._spinning = false;
+    }
+
+    spin() {
+        if (this._spinning) return Promise.resolve(this.nextSymbols);
+        this._spinning = true;
+
+        this.currentSymbols = this.nextSymbols;
+        this.nextSymbols = Array.from({ length: 5 }, () => [
+            KingdomSlotSymbol.random(this.symbols),
+            KingdomSlotSymbol.random(this.symbols),
+            KingdomSlotSymbol.random(this.symbols)
+        ]);
+
+        return Promise.all(
+            this.reels.map((reel) => {
+                const rounds = reel.renderSymbols(this.nextSymbols[reel.idx]);
+                return reel.spin(rounds);
+            })
+        ).then(() => {
+            this._spinning = false;
+            return this.nextSymbols;
+        }).catch((err) => {
+            this._spinning = false;
+            throw err;
+        });
+    }
+}
+
+function mountKingdomSlotEngine() {
+    const slotElement = document.getElementById('kingdom-slot-machine');
+    if (!slotElement) return;
+    state.kingdomSlotEngine = new KingdomSlotEngine(slotElement, { symbols: KINGDOM_SLOT_SYMBOLS });
+}
+
+function mountCasinoSlotEngine() {
+    const slotElement = document.getElementById('casino-slot-machine');
+    if (!slotElement) return;
+    state.casinoSlotEngine = new CasinoSlotEngine(slotElement, { symbols: CASINO_SLOT_SYMBOLS });
+}
+
+function evaluateKingdomSpinSymbols(symbolGrid) {
+    const centerLine = symbolGrid.map((reel) => reel[1]);
+    const frequencies = centerLine.reduce((acc, symbol) => {
+        acc[symbol] = (acc[symbol] || 0) + 1;
+        return acc;
+    }, {});
+    const maxMatch = Math.max(...Object.values(frequencies));
+
+    let wonPower = 1;
+    let wonCoins = 1800;
+
+    if (maxMatch >= 5) {
+        wonPower = 5;
+        wonCoins = 5000;
+    } else if (maxMatch === 4) {
+        wonPower = 4;
+        wonCoins = 3600;
+    } else if (maxMatch === 3) {
+        wonPower = 3;
+        wonCoins = 2800;
+    } else if (centerLine.includes('crown')) {
+        wonPower = 2;
+        wonCoins = 2300;
+    }
+
+    return { wonPower, wonCoins };
+}
+
+function evaluateCasinoSpinSymbols(symbolGrid, machineIdx) {
+    const centerLine = symbolGrid.map((reel) => reel[1]);
+    const frequencies = centerLine.reduce((acc, symbol) => {
+        acc[symbol] = (acc[symbol] || 0) + 1;
+        return acc;
+    }, {});
+    const maxMatch = Math.max(...Object.values(frequencies));
+    const machineBoost = 1 + (machineIdx * 0.08);
+
+    let multiplier = 0;
+    let resultLabel = 'MISS';
+
+    if (maxMatch >= 5) {
+        multiplier = centerLine[0] === 'seven' ? 18 : 12;
+        resultLabel = '5 OF A KIND';
+    } else if (maxMatch === 4) {
+        multiplier = 6.5;
+        resultLabel = '4 OF A KIND';
+    } else if (maxMatch === 3) {
+        multiplier = 3.2;
+        resultLabel = '3 OF A KIND';
+    } else if (centerLine.includes('seven') && centerLine.includes('diamond')) {
+        multiplier = 1.8;
+        resultLabel = 'LUCKY MIX';
+    } else if (new Set(centerLine).size <= 3) {
+        multiplier = 1.2;
+        resultLabel = 'SMALL WIN';
+    }
+
+    multiplier = Number((multiplier * machineBoost).toFixed(2));
+    const xpGained = (10 + (machineIdx * 4)) + (multiplier > 0 ? Math.ceil(multiplier * 2) : 3);
+
+    return { multiplier, xpGained, resultLabel };
+}
+
+function resolveCasinoLevelUps() {
+    let levelsGained = 0;
+    let totalBonusCoins = 0;
+    const unlockedMachines = [];
+
+    while (state.casinoXP >= state.casinoXPToNext) {
+        state.casinoXP -= state.casinoXPToNext;
+        state.casinoLevel += 1;
+        levelsGained += 1;
+
+        state.casinoXPToNext = state.casinoLevel * 80;
+        const bonusCoins = state.casinoLevel * 5000;
+        state.coins += bonusCoins;
+        totalBonusCoins += bonusCoins;
+
+        const newMachines = state.casinoMachines.filter((machine) => machine.unlockLevel === state.casinoLevel);
+        unlockedMachines.push(...newMachines);
+    }
+
+    return { levelsGained, totalBonusCoins, unlockedMachines };
+}
+
 // Helper to get current node's goal
 function getNodeGoal(regionIdx, nodeNum) {
     const region = state.regions[regionIdx];
     if (nodeNum === region.nodes) {
         // Boss Node
-        return 50;
+        return 8 + (regionIdx * 2);
     }
     // Normal Node
-    return 10 + (nodeNum * 5) + (regionIdx * 20);
+    return 3 + nodeNum + (regionIdx * 2);
 }
 
 // DOM Elements
@@ -189,9 +585,9 @@ function renderScreen() {
             }).join('')}
                     </div>
                     <div class="casino-menu">
-                        <div class="menu-item">🏆 Tournament</div>
-                        <div class="menu-item">🎁 Events</div>
-                        <div class="menu-item" style="color:#fbbf24;">📘 VIP</div>
+                        <div class="menu-item tooltip demo-tooltip" data-tip="Tournament is not available in this demo yet." title="Tournament is not available in this demo yet.">🏆 Tournament</div>
+                        <div class="menu-item tooltip demo-tooltip" data-tip="Events are not available in this demo yet." title="Events are not available in this demo yet.">🎁 Events</div>
+                        <div class="menu-item tooltip demo-tooltip" style="color:#fbbf24;" data-tip="VIP is not available in this demo yet." title="VIP is not available in this demo yet.">📘 VIP</div>
                     </div>
                 </div>
             `;
@@ -200,12 +596,7 @@ function renderScreen() {
             const curRegion = state.regions[state.currentRegionIdx];
             const activeNode = getRegionCurrentNode(curRegion);
             const regionCleared = isRegionCleared(curRegion);
-            const regionThemes = {
-                home: { border: '#22c55e', glow: 'rgba(34,197,94,0.55)', bg: 'rgba(20,83,45,0.18)', bossBorder: '#f87171' },
-                desert: { border: '#f59e0b', glow: 'rgba(245,158,11,0.55)', bg: 'rgba(120,53,15,0.2)', bossBorder: '#f87171' },
-                snow: { border: '#67e8f9', glow: 'rgba(103,232,249,0.55)', bg: 'rgba(14,116,144,0.2)', bossBorder: '#f87171' }
-            };
-            const theme = regionThemes[curRegion.id] || regionThemes.home;
+            const theme = KINGDOM_MAP_THEMES[curRegion.id] || KINGDOM_MAP_THEMES.home;
 
             const nextRegion = state.currentRegionIdx < state.regions.length - 1 ? state.regions[state.currentRegionIdx + 1] : null;
             const nextArrow = nextRegion && nextRegion.unlocked
@@ -261,6 +652,7 @@ function renderScreen() {
         }
     } else if (state.screen === 'casino-slot') {
         const m = state.casinoMachines[state.selectedMachine];
+        const canAffordSpin = state.coins >= state.casinoBet;
         html = `
             <div class="screen active slot-screen">
                 <div class="slot-header">
@@ -268,13 +660,19 @@ function renderScreen() {
                     <div class="slot-header-content" style="color:${m.color}">${m.icon} ${m.name}</div>
                 </div>
                 <div class="slot-reels-container">
-                    <div class="reels-placeholder" style="border-color:${m.color}; box-shadow: 0 0 30px ${m.color}33, inset 0 0 50px rgba(0,0,0,0.8);">${m.icon}${m.icon}${m.icon}</div>
-                    <div class="bet-controls">
-                        <button onclick="changeBet(-1000)">-</button>
-                        <div class="bet-amount">1000</div>
-                        <button onclick="changeBet(1000)">+</button>
+                    <div class="casino-slot-machine" id="casino-slot-machine" style="--slot-accent: ${m.color}; --slot-glow: ${m.color}55;">
+                        <div class="c-reel"></div>
+                        <div class="c-reel"></div>
+                        <div class="c-reel"></div>
+                        <div class="c-reel"></div>
+                        <div class="c-reel"></div>
                     </div>
-                    <button class="spin-btn" style="background: linear-gradient(to bottom, ${m.color}, ${m.color}aa); border-color: ${m.color}; box-shadow: 0 10px 0 ${m.color}55, 0 15px 20px rgba(0,0,0,0.6);" onclick="spinCasinoSlot()">SPIN</button>
+                    <div class="bet-controls">
+                        <button onclick="changeBet(-500)" ${state.casinoSpinBusy ? 'disabled' : ''}>-</button>
+                        <div class="bet-amount">${state.casinoBet.toLocaleString()}</div>
+                        <button onclick="changeBet(500)" ${state.casinoSpinBusy ? 'disabled' : ''}>+</button>
+                    </div>
+                    <button id="casino-spin-btn" class="spin-btn" style="background: linear-gradient(to bottom, ${m.color}, ${m.color}aa); border-color: ${m.color}; box-shadow: 0 10px 0 ${m.color}55, 0 15px 20px rgba(0,0,0,0.6);" onclick="spinCasinoSlot()" ${state.casinoSpinBusy || !canAffordSpin ? 'disabled' : ''}>SPIN</button>
                 </div>
             </div>
         `;
@@ -282,14 +680,7 @@ function renderScreen() {
         const curRegion = state.regions[state.currentRegionIdx];
         const activeNode = getRegionCurrentNode(curRegion);
         const regionCleared = isRegionCleared(curRegion);
-
-        // Per-region themes
-        const regionThemes = {
-            home: { border: '#22c55e', glow: 'rgba(34,197,94,0.55)', bg: 'rgba(20,83,45,0.18)', bossBorder: '#f87171' },
-            desert: { border: '#f59e0b', glow: 'rgba(245,158,11,0.55)', bg: 'rgba(120,53,15,0.2)', bossBorder: '#f87171' },
-            snow: { border: '#67e8f9', glow: 'rgba(103,232,249,0.55)', bg: 'rgba(14,116,144,0.2)', bossBorder: '#f87171' }
-        };
-        const theme = regionThemes[curRegion.id] || regionThemes.home;
+        const theme = KINGDOM_MAP_THEMES[curRegion.id] || KINGDOM_MAP_THEMES.home;
 
         // Arrow nav: can go to adjacent unlocked regions
         const prevRegion = state.currentRegionIdx > 0 ? state.regions[state.currentRegionIdx - 1] : null;
@@ -362,12 +753,7 @@ function renderScreen() {
         const curRegion = state.regions[state.currentRegionIdx];
         const activeNode = getRegionCurrentNode(curRegion);
         const regionCleared = isRegionCleared(curRegion);
-        const regionThemes = {
-            home: { accent: '#22c55e', reelBorder: '#22c55e', reelGlow: 'rgba(34,197,94,0.25)' },
-            desert: { accent: '#f59e0b', reelBorder: '#f59e0b', reelGlow: 'rgba(245,158,11,0.25)' },
-            snow: { accent: '#67e8f9', reelBorder: '#67e8f9', reelGlow: 'rgba(103,232,249,0.25)' }
-        };
-        const theme = regionThemes[curRegion.id] || regionThemes.home;
+        const theme = KINGDOM_SLOT_THEMES[curRegion.id] || KINGDOM_SLOT_THEMES.home;
 
         const curGoal = getNodeGoal(state.currentRegionIdx, activeNode);
         const pct = regionCleared ? 100 : Math.min(100, (curRegion.nodeProgress / curGoal) * 100);
@@ -392,7 +778,13 @@ function renderScreen() {
                         </div>
                     </div>
 
-                    <div class="reels-placeholder" style="border-color: ${theme.reelBorder}; box-shadow: 0 0 30px ${theme.reelGlow}, inset 0 0 50px rgba(0,0,0,0.8);">⚔️🛡️⚔️</div>
+                    <div class="kingdom-slot-machine" id="kingdom-slot-machine" style="--slot-accent: ${theme.reelBorder}; --slot-glow: ${theme.reelGlow};">
+                        <div class="k-reel"></div>
+                        <div class="k-reel"></div>
+                        <div class="k-reel"></div>
+                        <div class="k-reel"></div>
+                        <div class="k-reel"></div>
+                    </div>
 
                     <div class="bet-controls">
                         <button onclick="changeBet(-500)">-</button>
@@ -400,7 +792,7 @@ function renderScreen() {
                         <button onclick="changeBet(500)">+</button>
                     </div>
 
-                    <button class="spin-btn" style="background: linear-gradient(to bottom, ${theme.accent}, ${theme.accent}aa); border-color: ${theme.accent}; box-shadow: 0 10px 0 ${theme.accent}55, 0 15px 20px rgba(0,0,0,0.6);" ${regionCleared ? 'disabled' : 'onclick="spinKingdomSlot()"'}>${regionCleared ? 'CLEARED' : 'SPIN'}</button>
+                    <button id="kingdom-spin-btn" class="spin-btn" style="background: linear-gradient(to bottom, ${theme.accent}, ${theme.accent}aa); border-color: ${theme.accent}; box-shadow: 0 10px 0 ${theme.accent}55, 0 15px 20px rgba(0,0,0,0.6);" ${regionCleared ? 'disabled' : 'onclick="spinKingdomSlot()"'} ${state.kingdomSpinBusy ? 'disabled' : ''}>${regionCleared ? 'CLEARED' : 'SPIN'}</button>
                 </div>
             </div>
         `;
@@ -416,11 +808,10 @@ function renderScreen() {
         const builtLevels = castle.slots.reduce((sum, slot) => sum + slot.level, 0);
         const completionPct = totalLevels === 0 ? 0 : Math.round((builtLevels / totalLevels) * 100);
         const completed = isCastleCompleted(castle);
-        const unlockedNavIdx = unlockedCastleIdxs.indexOf(state.buildingRegionIdx);
-        const prevRegionIdx = unlockedNavIdx > 0 ? unlockedCastleIdxs[unlockedNavIdx - 1] : null;
-        const nextRegionIdx = unlockedNavIdx >= 0 && unlockedNavIdx < unlockedCastleIdxs.length - 1
-            ? unlockedCastleIdxs[unlockedNavIdx + 1]
-            : null;
+        const prevRegionIdx = state.buildingRegionIdx > 0 ? state.buildingRegionIdx - 1 : null;
+        const nextRegionIdx = state.buildingRegionIdx < state.regions.length - 1 ? state.buildingRegionIdx + 1 : null;
+        const regionLabel = curRegion.name.replace(/^[^\s]+\s/, '');
+        const lockInstruction = getCastleUnlockHint(state.buildingRegionIdx);
 
         const buildHtml = castle.slots.map((slot, idx) => {
             const isMax = slot.level >= slot.maxLevel;
@@ -447,46 +838,53 @@ function renderScreen() {
                 </button>
             `;
         }).join('');
-        const castleTabs = unlockedCastleIdxs.map((idx) => {
-            const region = state.regions[idx];
-            const active = idx === state.buildingRegionIdx;
-            return `<button class="castle-region-tab ${active ? 'active' : ''}" onclick="switchBuildingRegion(${idx})">${region.icon || '🏰'} ${region.name.replace(/^[^\\s]+\\s/, '')}</button>`;
-        }).join('');
-        const bonusState = !castle.unlocked ? 'LOCKED' : (castle.completionClaimed ? 'CLAIMED' : 'PENDING');
-        const bonusStateClass = !castle.unlocked ? 'locked' : (castle.completionClaimed ? 'claimed' : 'pending');
+        const canClaimBonus = castle.unlocked && completed && !castle.completionClaimed;
+        const bonusStateClass = !castle.unlocked
+            ? 'locked'
+            : (castle.completionClaimed ? 'claimed' : (canClaimBonus ? 'claimable' : 'pending'));
+        const bonusControl = canClaimBonus
+            ? `<button class="castle-bonus-claim-btn" onclick="claimCastleCompletionBonus()" aria-label="Claim completion bonus">🎁</button>`
+            : `<div class="castle-bonus-icon" aria-hidden="true">${!castle.unlocked ? '🔒' : (castle.completionClaimed ? '✓' : '•')}</div>`;
 
         html = `
             <div class="screen active castle-bg">
-                <div class="castle-shell">
-                    <div class="castle-region-nav">
-                        <button class="castle-back-btn" onclick="switchScreen('home')" aria-label="Back">⮌</button>
-                        <button class="castle-region-arrow" ${prevRegionIdx !== null ? `onclick="switchBuildingRegion(${prevRegionIdx})"` : 'disabled'}>◀</button>
-                        <div class="castle-region-tabs">${castleTabs}</div>
-                        <button class="castle-region-arrow" ${nextRegionIdx !== null ? `onclick="switchBuildingRegion(${nextRegionIdx})"` : 'disabled'}>▶</button>
-                        <div class="castle-bonus-card castle-bonus-card-compact ${bonusStateClass}">
-                            <div class="castle-bonus-value">🎁 🪙 ${CASTLE_COMPLETION_BONUS.coins.toLocaleString()} · 👑 ${CASTLE_COMPLETION_BONUS.crowns}</div>
-                            <div class="castle-bonus-state">${bonusState}</div>
+                <div class="castle-shell ${completed ? 'castle-shell-completed' : ''}">
+                    <div class="castle-topbar">
+                        <div class="castle-top-side castle-top-left">
+                            <button class="castle-ui-btn castle-home-btn" onclick="switchScreen('home')" aria-label="Back to Home">⌂</button>
+                            <button class="castle-ui-btn" ${prevRegionIdx !== null ? `onclick="switchBuildingRegion(${prevRegionIdx})"` : 'disabled'} aria-label="Previous Castle">◀</button>
                         </div>
-                    </div>
-                    <div class="castle-hud-center castle-hud-center-compact">
-                        <div class="castle-region-pill">${curRegion.name}</div>
-                        <div class="castle-progress-wheel" style="--pct:${completionPct}">
-                            <span>🏰</span>
+                        <div class="castle-top-center-cluster">
+                            <div class="castle-pill-row">
+                                <div class="castle-region-pill">${curRegion.icon || '🏰'} ${regionLabel}</div>
+                            </div>
+                            <div class="castle-bonus-row">
+                                <div class="castle-progress-wheel castle-progress-wheel-mini" style="--pct:${completionPct}">
+                                    <span>🏰</span>
+                                </div>
+                                <div class="castle-bonus-card castle-bonus-card-floating ${bonusStateClass}">
+                                    <div class="castle-bonus-value">🎁 🪙 ${CASTLE_COMPLETION_BONUS.coins.toLocaleString()}  👑 ${CASTLE_COMPLETION_BONUS.crowns}</div>
+                                    <div class="castle-bonus-meta">
+                                        ${bonusControl}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="castle-level-inline">LV ${builtLevels}/${totalLevels}</div>
+                        <div class="castle-top-side castle-top-right">
+                            <button class="castle-ui-btn" ${nextRegionIdx !== null ? `onclick="switchBuildingRegion(${nextRegionIdx})"` : 'disabled'} aria-label="Next Castle">▶</button>
+                        </div>
                     </div>
 
                     ${castle.unlocked
                 ? `
-                            <div class="build-objects-container castle-plot-grid">
+                            <div class="build-objects-container castle-plot-grid ${completed ? 'castle-plot-grid-completed' : ''}">
                                 ${buildHtml}
                             </div>
-                            ${completed ? '<div class="castle-complete-banner">🏆 CASTLE COMPLETED</div>' : ''}
                         `
                 : `
                             <div class="castle-lock-panel">
                                 <div class="castle-lock-title">🔒 BUILDING LOCKED</div>
-                                <div class="castle-lock-note">Defeat the boss of ${curRegion.name} to unlock this castle.</div>
+                                <div class="castle-lock-note">${lockInstruction}</div>
                             </div>
                         `
             }
@@ -496,6 +894,18 @@ function renderScreen() {
     }
 
     els.mainContent.innerHTML = html;
+
+    if (state.screen === 'kingdom-slot') {
+        mountKingdomSlotEngine();
+    } else {
+        state.kingdomSlotEngine = null;
+    }
+
+    if (state.screen === 'casino-slot') {
+        mountCasinoSlotEngine();
+    } else {
+        state.casinoSlotEngine = null;
+    }
 }
 
 function updateTabs() {
@@ -560,14 +970,21 @@ function toggleUniversalPanel() {
     state.universalOpen = !state.universalOpen;
     if (!state.universalOpen) { closePanels(); return; }
 
-    const W = 900, H = 560;
-    const positions = [
-        { x: 200, y: 280 },
-        { x: 460, y: 160 },
-        { x: 720, y: 300 }
-    ];
+    const H = 560;
+    const nodeSpacing = 220;
+    const leftPad = 140;
+    const rightPad = 180;
+    const W = Math.max(920, leftPad + ((state.regions.length - 1) * nodeSpacing) + rightPad);
+    const midY = Math.round(H / 2);
+    const yOffsets = [0, -92, 74, -58, 86, -44, 62, -72];
+
+    const positions = state.regions.map((_, idx) => ({
+        x: leftPad + (idx * nodeSpacing),
+        y: midY + yOffsets[idx % yOffsets.length]
+    }));
+
     const nodes = state.regions.map((region, idx) => {
-        const pos = positions[idx] || { x: 180 + (idx * 220), y: 180 + ((idx % 2) * 120) };
+        const pos = positions[idx];
         return {
             id: region.id,
             label: region.name.replace(/^[^\s]+\s/, ''),
@@ -592,18 +1009,24 @@ function toggleUniversalPanel() {
             class="${unlocked ? 'galaxy-link-active' : ''}" />`;
     }).join('');
 
+    const stars = Array.from({ length: 70 }, () => {
+        const x = Math.random() * W;
+        const y = Math.random() * H;
+        const s = Math.random() * 1.5 + 0.5;
+        return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${s.toFixed(1)}" fill="white" opacity="${(Math.random() * 0.5 + 0.08).toFixed(2)}"/>`;
+    }).join('');
+
     let svgNodes = nodes.map((n, i) => {
         const glow = n.isActive ? 'url(#glow-active)' : (n.unlocked ? 'url(#glow-unlocked)' : 'none');
-        const color = n.id === 'home' ? '#22c55e' : (n.id === 'desert' ? '#f59e0b' : '#67e8f9');
+        const color = UNIVERSAL_REGION_COLORS[n.id] || '#a78bfa';
         const r = 30;
-        const opacity = n.unlocked ? 1 : 0.35;
-        const clickable = n.unlocked;
-        const onclick = n.unlocked ? `travelToRegion(${n.regionIdx}); closePanels();` : '';
+        const opacity = n.unlocked ? 1 : 0.48;
 
         return `
-        <g class="galaxy-node-g ${n.isActive ? 'galaxy-active' : ''} ${clickable ? 'galaxy-clickable' : ''}"
+        <g class="galaxy-node-g ${n.isActive ? 'galaxy-active' : ''} galaxy-clickable ${n.unlocked ? '' : 'galaxy-locked'}"
+           data-x="${n.x}"
            style="opacity:${opacity}"
-           onclick="${onclick}" transform="translate(${n.x}, ${n.y})">
+           onclick="onUniversalRegionClick(${n.regionIdx})" transform="translate(${n.x}, ${n.y})">
             ${n.isActive ? `<circle r="${r + 10}" fill="${color}" opacity="0.15" class="pulse-ring"/>` : ''}
             <circle r="${r}" fill="rgba(15,15,30,0.9)"
                 stroke="${color}" stroke-width="${n.isActive ? 3 : 1.5}"
@@ -620,32 +1043,67 @@ function toggleUniversalPanel() {
     els.universalPanel.innerHTML = `
         <div class="galaxy-panel">
             <div class="galaxy-title">🌌 UNIVERSE MAP</div>
-            <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" class="galaxy-svg">
-                <defs>
-                    <filter id="glow-active" x="-50%" y="-50%" width="200%" height="200%">
-                        <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
-                        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                    </filter>
-                    <filter id="glow-unlocked" x="-50%" y="-50%" width="200%" height="200%">
-                        <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
-                        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                    </filter>
-                    <!-- Starfield dots -->
-                    ${Array.from({ length: 40 }, () => {
-        const x = Math.random() * W, y = Math.random() * H;
-        const s = Math.random() * 1.5 + 0.5;
-        return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${s.toFixed(1)}" fill="white" opacity="${(Math.random() * 0.5 + 0.1).toFixed(2)}"/>`;
-    }).join('')}
-                </defs>
-                ${svgLines}
-                ${svgNodes}
-            </svg>
+            <div class="galaxy-scroll" id="galaxy-scroll">
+                <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" class="galaxy-svg">
+                    <defs>
+                        <filter id="glow-active" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+                            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                        </filter>
+                        <filter id="glow-unlocked" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+                            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                        </filter>
+                    </defs>
+                    ${stars}
+                    ${svgLines}
+                    ${svgNodes}
+                </svg>
+            </div>
             <button class="galaxy-close-btn" onclick="closePanels()">✕ CLOSE</button>
         </div>
     `;
 
     els.overlay.classList.remove('hidden');
     els.universalPanel.classList.remove('hidden');
+
+    requestAnimationFrame(() => {
+        const scrollEl = document.getElementById('galaxy-scroll');
+        if (!scrollEl) return;
+
+        const activeNode = scrollEl.querySelector('.galaxy-node-g.galaxy-active');
+        const activeX = activeNode ? Number(activeNode.getAttribute('data-x')) : (W / 2);
+        const targetLeft = Math.max(
+            0,
+            Math.min(scrollEl.scrollWidth - scrollEl.clientWidth, activeX - (scrollEl.clientWidth / 2))
+        );
+        scrollEl.scrollTo({ left: targetLeft, behavior: 'smooth' });
+    });
+}
+
+function getRegionUnlockHint(idx) {
+    const targetRegion = state.regions[idx];
+    if (!targetRegion) return "This region is not available yet.";
+    if (targetRegion.unlocked) return "This region is already unlocked.";
+    if (idx === 0) return "Home is available from the start.";
+
+    const prerequisiteRegion = state.regions[idx - 1];
+    if (!prerequisiteRegion) return "Clear the previous region boss to unlock this region.";
+
+    const progressText = `Progress: ${prerequisiteRegion.clearedNodes}/${prerequisiteRegion.nodes} nodes cleared.`;
+    return `Defeat the boss of ${prerequisiteRegion.name} to unlock ${targetRegion.name}.<br>${progressText}`;
+}
+
+function onUniversalRegionClick(idx) {
+    const targetRegion = state.regions[idx];
+    if (!targetRegion) return;
+
+    if (targetRegion.unlocked) {
+        travelToRegion(idx);
+        return;
+    }
+
+    showPopup("🔒 REGION LOCKED", getRegionUnlockHint(idx), "closePopup();");
 }
 
 function travelToRegion(idx) {
@@ -656,8 +1114,30 @@ function travelToRegion(idx) {
     renderScreen();
 }
 
+function getCastleUnlockHint(idx) {
+    const targetRegion = state.regions[idx];
+    if (!targetRegion) return "This castle is not available yet.";
+    if (targetRegion.castle.unlocked) return "This castle is already unlocked.";
+    if (idx === 0) return "Home Castle is available from the start.";
+
+    const prerequisiteRegion = state.regions[idx - 1];
+    if (!prerequisiteRegion) return "Clear the previous region boss to unlock this castle.";
+
+    const prerequisiteName = prerequisiteRegion.name;
+    const targetName = targetRegion.name;
+    const progressText = `Progress: ${prerequisiteRegion.clearedNodes}/${prerequisiteRegion.nodes} nodes cleared.`;
+    return `Defeat the boss of ${prerequisiteName} to unlock ${targetName} Castle.<br>${progressText}`;
+}
+
 function switchBuildingRegion(idx) {
-    if (!state.regions[idx] || !state.regions[idx].castle.unlocked) return;
+    const targetRegion = state.regions[idx];
+    if (!targetRegion) return;
+
+    if (!targetRegion.castle.unlocked) {
+        showPopup("🔒 CASTLE LOCKED", getCastleUnlockHint(idx), "closePopup();");
+        return;
+    }
+
     state.buildingRegionIdx = idx;
     renderScreen();
 }
@@ -685,8 +1165,13 @@ els.mainContent.addEventListener('touchend', e => {
 }, { passive: true });
 
 function changeBet(amt) {
-    // Visual dummy
-    console.log('Change bet', amt);
+    if (state.screen !== 'casino-slot' || state.casinoSpinBusy) return;
+    const minBet = 500;
+    const maxBet = 20000;
+    const nextBet = Math.max(minBet, Math.min(maxBet, state.casinoBet + amt));
+    if (nextBet === state.casinoBet) return;
+    state.casinoBet = nextBet;
+    renderScreen();
 }
 
 function showPopup(title, msg, onContinueStr = "closePopup()", isBoss = false) {
@@ -737,44 +1222,75 @@ function selectMachine(idx) {
 }
 
 function spinCasinoSlot() {
+    if (state.screen !== 'casino-slot') return;
+    if (state.casinoSpinBusy) return;
+
     const m = state.casinoMachines[state.selectedMachine];
-    const wonCoins = 2000 + Math.floor(Math.random() * 3000);
-    const xpGained = 15 + (state.selectedMachine * 5); // higher machines give more XP
+    const bet = state.casinoBet;
 
-    state.coins += wonCoins;
-    state.casinoXP += xpGained;
-
-    spawnFloatingReward(`🪙 +${wonCoins.toLocaleString()}`, window.innerWidth / 2 - 40, window.innerHeight / 2);
-    spawnFloatingReward(`+${xpGained} XP`, window.innerWidth / 2 + 60, window.innerHeight / 2 + 40);
-
-    // Level up check
-    if (state.casinoXP >= state.casinoXPToNext) {
-        state.casinoXP -= state.casinoXPToNext;
-        state.casinoLevel++;
-        state.casinoXPToNext = state.casinoLevel * 80;
-        const bonusCoins = state.casinoLevel * 5000;
-        state.coins += bonusCoins;
-
-        // Check for newly unlocked machines
-        const newMachines = state.casinoMachines.filter(mm => mm.unlockLevel === state.casinoLevel);
-        let unlockMsg = newMachines.length > 0
-            ? `<br>🎉 Unlocked: <b>${newMachines.map(mm => mm.icon + ' ' + mm.name).join(', ')}</b>!`
-            : '';
-
-        renderTopBar();
-        renderScreen();
-        setTimeout(() => {
-            showPopup(
-                `⭐ LEVEL UP! LV ${state.casinoLevel} ⭐`,
-                `+${bonusCoins.toLocaleString()} Coins bonus!${unlockMsg}`,
-                "closePopup();",
-                true
-            );
-        }, 400);
+    if (state.coins < bet) {
+        showPopup("🚫 NOT ENOUGH COINS", `Need ${bet.toLocaleString()} coins to spin.`);
         return;
     }
 
+    if (!state.casinoSlotEngine) mountCasinoSlotEngine();
+    if (!state.casinoSlotEngine) {
+        showToast('Casino machine is not ready');
+        return;
+    }
+
+    state.casinoSpinBusy = true;
+    const spinButton = document.getElementById('casino-spin-btn');
+    if (spinButton) spinButton.disabled = true;
+
+    state.coins -= bet;
     renderTopBar();
+    spawnFloatingReward(`🪙 -${bet.toLocaleString()}`, window.innerWidth / 2 - 20, window.innerHeight / 2 + 30);
+
+    state.casinoSlotEngine.spin().then((symbols) => {
+        const { multiplier, xpGained, resultLabel } = evaluateCasinoSpinSymbols(symbols, state.selectedMachine);
+        const wonCoins = Math.floor(bet * multiplier);
+
+        if (wonCoins > 0) {
+            state.coins += wonCoins;
+            spawnFloatingReward(`🪙 +${wonCoins.toLocaleString()}`, window.innerWidth / 2 - 50, window.innerHeight / 2);
+        } else {
+            spawnFloatingReward('💨 MISS', window.innerWidth / 2 - 10, window.innerHeight / 2);
+        }
+
+        state.casinoXP += xpGained;
+        spawnFloatingReward(`+${xpGained} XP`, window.innerWidth / 2 + 70, window.innerHeight / 2 + 40);
+        showToast(`${m.icon} ${resultLabel}${wonCoins > 0 ? ` · +${wonCoins.toLocaleString()}` : ''}`);
+
+        const levelResult = resolveCasinoLevelUps();
+        renderTopBar();
+        renderScreen();
+
+        if (levelResult.levelsGained > 0) {
+            const unlockMsg = levelResult.unlockedMachines.length > 0
+                ? `<br>🎉 Unlocked: <b>${levelResult.unlockedMachines.map(mm => mm.icon + ' ' + mm.name).join(', ')}</b>!`
+                : '';
+            setTimeout(() => {
+                showPopup(
+                    `⭐ LEVEL UP! LV ${state.casinoLevel} ⭐`,
+                    `+${levelResult.totalBonusCoins.toLocaleString()} Coins bonus!${unlockMsg}`,
+                    "closePopup();",
+                    true
+                );
+            }, 400);
+        }
+    }).catch((err) => {
+        console.error('casino slot spin error', err);
+        state.coins += bet;
+        renderTopBar();
+        showToast('Spin failed');
+    }).finally(() => {
+        state.casinoSpinBusy = false;
+        const btn = document.getElementById('casino-spin-btn');
+        if (btn && state.screen === 'casino-slot' && state.coins >= state.casinoBet) {
+            btn.disabled = false;
+        }
+    });
 }
 
 function spinKingdomSlot() {
@@ -784,62 +1300,83 @@ function spinKingdomSlot() {
         return;
     }
 
-    const wonCoins = 2000;
-    const wonPower = Math.floor(Math.random() * 4) + 1;
-    const activeNode = getRegionCurrentNode(curRegion);
-    const curGoal = getNodeGoal(state.currentRegionIdx, activeNode);
-    const isBoss = (activeNode === curRegion.nodes);
+    if (state.kingdomSpinBusy) return;
+    if (!state.kingdomSlotEngine) mountKingdomSlotEngine();
+    if (!state.kingdomSlotEngine) {
+        showToast('Slot machine is not ready');
+        return;
+    }
 
-    state.coins += wonCoins;
-    curRegion.nodeProgress += wonPower;
+    state.kingdomSpinBusy = true;
+    const spinButton = document.getElementById('kingdom-spin-btn');
+    if (spinButton) spinButton.disabled = true;
 
-    spawnFloatingReward(`🪙 +${wonCoins}`, window.innerWidth / 2 - 50, window.innerHeight / 2);
-    setTimeout(() => spawnFloatingReward(`⚔️ +${wonPower}`, window.innerWidth / 2 + 50, window.innerHeight / 2), 200);
+    state.kingdomSlotEngine.spin().then((symbols) => {
+        const { wonPower, wonCoins } = evaluateKingdomSpinSymbols(symbols);
+        const activeNode = getRegionCurrentNode(curRegion);
+        const curGoal = getNodeGoal(state.currentRegionIdx, activeNode);
+        const isBoss = (activeNode === curRegion.nodes);
 
-    if (curRegion.nodeProgress >= curGoal) {
-        curRegion.nodeProgress = 0;
-        curRegion.clearedNodes += 1;
-        state.crowns += 1;
+        state.coins += wonCoins;
+        curRegion.nodeProgress += wonPower;
 
-        renderTopBar();
-        renderScreen();
+        spawnFloatingReward(`🪙 +${wonCoins}`, window.innerWidth / 2 - 50, window.innerHeight / 2);
+        setTimeout(() => spawnFloatingReward(`⚔️ +${wonPower}`, window.innerWidth / 2 + 50, window.innerHeight / 2), 200);
 
-        setTimeout(() => {
-            let popupTitle = "✨ NODE CLEARED ✨";
-            let popupMsg = "+1 Crown earned.";
-            let continueAction = "switchScreen('home'); closePopup();";
-
-            if (isBoss && isRegionCleared(curRegion)) {
-                popupTitle = "🔥 REGION CLEARED 🔥";
-                popupMsg = "+1 Crown (node).";
-
-                if (state.currentRegionIdx < state.regions.length - 1) {
-                    const nextIdx = state.currentRegionIdx + 1;
-                    state.regions[nextIdx].unlocked = true;
-                    state.regions[nextIdx].castle.unlocked = true;
-                    popupMsg += `<br><b>${state.regions[nextIdx].name}</b> unlocked.`;
-                    popupMsg += `<br><b>${state.regions[nextIdx].name} Building</b> unlocked.`;
-                    continueAction = `travelToRegion(${nextIdx}); closePopup();`;
-                } else {
-                    popupMsg += "<br><b>All regions conquered!</b>";
-                }
-            }
+        if (curRegion.nodeProgress >= curGoal) {
+            curRegion.nodeProgress = 0;
+            curRegion.clearedNodes += 1;
+            state.crowns += 1;
 
             renderTopBar();
             renderScreen();
-            showPopup(popupTitle, popupMsg, continueAction, isBoss);
-        }, 900);
-    } else {
-        renderTopBar();
-        renderScreen();
-    }
+
+            setTimeout(() => {
+                let popupTitle = "✨ NODE CLEARED ✨";
+                let popupMsg = "+1 Crown earned.";
+                let continueAction = "switchScreen('home'); closePopup();";
+
+                if (isBoss && isRegionCleared(curRegion)) {
+                    popupTitle = "🔥 REGION CLEARED 🔥";
+                    popupMsg = "+1 Crown (node).";
+
+                    if (state.currentRegionIdx < state.regions.length - 1) {
+                        const nextIdx = state.currentRegionIdx + 1;
+                        state.regions[nextIdx].unlocked = true;
+                        state.regions[nextIdx].castle.unlocked = true;
+                        popupMsg += `<br><b>${state.regions[nextIdx].name}</b> unlocked.`;
+                        popupMsg += `<br><b>${state.regions[nextIdx].name} Building</b> unlocked.`;
+                        continueAction = `travelToRegion(${nextIdx}); closePopup();`;
+                    } else {
+                        popupMsg += "<br><b>All regions conquered!</b>";
+                    }
+                }
+
+                renderTopBar();
+                renderScreen();
+                showPopup(popupTitle, popupMsg, continueAction, isBoss);
+            }, 900);
+        } else {
+            renderTopBar();
+            renderScreen();
+        }
+    }).catch((err) => {
+        console.error('kingdom slot spin error', err);
+        showToast('Spin failed');
+    }).finally(() => {
+        state.kingdomSpinBusy = false;
+        const btn = document.getElementById('kingdom-spin-btn');
+        if (btn && state.screen === 'kingdom-slot' && !isRegionCleared(state.regions[state.currentRegionIdx])) {
+            btn.disabled = false;
+        }
+    });
 }
 
 function upgradeCastleSlot(slotIdx) {
     const curRegion = state.regions[state.buildingRegionIdx];
     const castle = curRegion.castle;
     if (!castle.unlocked) {
-        showPopup("🔒 BUILDING LOCKED", `Defeat ${curRegion.name} boss to unlock this building.`);
+        showPopup("🔒 BUILDING LOCKED", getCastleUnlockHint(state.buildingRegionIdx));
         return;
     }
 
@@ -860,20 +1397,31 @@ function upgradeCastleSlot(slotIdx) {
     spawnFloatingReward(`🏗 ${slot.name} LV ${slot.level}`, window.innerWidth / 2, window.innerHeight / 2);
 
     if (isCastleCompleted(castle) && !castle.completionClaimed) {
-        castle.completionClaimed = true;
-        state.coins += CASTLE_COMPLETION_BONUS.coins;
-        state.crowns += CASTLE_COMPLETION_BONUS.crowns;
-        renderTopBar();
         renderScreen();
-        setTimeout(() => {
-            showPopup(
-                "🏰 CASTLE COMPLETE",
-                `Completion bonus:<br>🪙 +${CASTLE_COMPLETION_BONUS.coins.toLocaleString()}<br>👑 +${CASTLE_COMPLETION_BONUS.crowns}`,
-                "closePopup();",
-                true
-            );
-        }, 350);
+        showToast('🏰 Castle completed! Claim bonus from top panel.');
     }
+}
+
+function claimCastleCompletionBonus() {
+    const curRegion = state.regions[state.buildingRegionIdx];
+    const castle = curRegion?.castle;
+    if (!castle || !castle.unlocked) return;
+    if (!isCastleCompleted(castle) || castle.completionClaimed) return;
+
+    castle.completionClaimed = true;
+    state.coins += CASTLE_COMPLETION_BONUS.coins;
+    state.crowns += CASTLE_COMPLETION_BONUS.crowns;
+
+    renderTopBar();
+    renderScreen();
+    spawnFloatingReward(`🪙 +${CASTLE_COMPLETION_BONUS.coins.toLocaleString()}`, window.innerWidth / 2 - 60, window.innerHeight / 2);
+    setTimeout(() => spawnFloatingReward(`👑 +${CASTLE_COMPLETION_BONUS.crowns}`, window.innerWidth / 2 + 60, window.innerHeight / 2 + 20), 150);
+    showPopup(
+        "🎁 BONUS CLAIMED",
+        `🪙 +${CASTLE_COMPLETION_BONUS.coins.toLocaleString()}<br>👑 +${CASTLE_COMPLETION_BONUS.crowns}`,
+        "closePopup();",
+        true
+    );
 }
 
 // Initial Render

@@ -1,0 +1,39 @@
+flowchart TD
+    Start([Player enters game])
+    Choose{Choose mode}
+
+    Start --> Choose
+
+    Choose --> Casino
+    Choose --> Kingdom
+
+    subgraph CasinoMode[Casino Mode]
+        Casino[Play slot machines]
+        CasinoReward[Get coins + XP]
+        CasinoLevel[Level up casino account]
+        CasinoUnlock[Unlock more machines]
+        CasinoLoop[Higher machine variety and better progression pace]
+
+        Casino --> CasinoReward --> CasinoLevel --> CasinoUnlock --> CasinoLoop --> Casino
+    end
+
+    subgraph KingdomMode[Kingdom Mode]
+        Kingdom[Play region nodes]
+        NodeClear[Clear node: +crown]
+        BossClear[Clear boss: unlock next region + next castle]
+        Building[Go to Building]
+        BuildSlots[Spend crowns to upgrade 4 castle slots]
+        CastleDone[Castle complete]
+        ClaimBonus[Manual claim completion bonus: coins + crowns]
+        KingdomLoop[Use rewards to keep progressing regions and buildings]
+
+        Kingdom --> NodeClear --> BossClear --> Building --> BuildSlots --> CastleDone --> ClaimBonus --> KingdomLoop --> Kingdom
+    end
+
+    CasinoReward --> SharedCoins[(Coins pool)]
+    ClaimBonus --> SharedCoins
+    NodeClear --> SharedCrowns[(Crowns pool)]
+    ClaimBonus --> SharedCrowns
+
+    SharedCoins --> Casino
+    SharedCrowns --> BuildSlots
