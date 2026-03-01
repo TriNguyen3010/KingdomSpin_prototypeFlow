@@ -458,27 +458,22 @@ function renderScreen() {
         html = `
             <div class="screen active castle-bg">
                 <div class="castle-shell">
-                    <div class="castle-hud castle-hud-compact">
-                        <button class="castle-back-btn" onclick="switchScreen('home')" aria-label="Back">⮌</button>
-                        <div class="castle-hud-center">
-                            <div class="castle-region-pill">${curRegion.name}</div>
-                            <div class="castle-progress-wheel" style="--pct:${completionPct}">
-                                <span>🏰</span>
-                            </div>
-                            <div class="castle-progress-pips">
-                                ${castle.slots.map((slot) => `<span class="castle-pip ${slot.level >= slot.maxLevel ? 'on' : ''}"></span>`).join('')}
-                            </div>
-                        </div>
-                    </div>
                     <div class="castle-region-nav">
+                        <button class="castle-back-btn" onclick="switchScreen('home')" aria-label="Back">⮌</button>
                         <button class="castle-region-arrow" ${prevRegionIdx !== null ? `onclick="switchBuildingRegion(${prevRegionIdx})"` : 'disabled'}>◀</button>
                         <div class="castle-region-tabs">${castleTabs}</div>
                         <button class="castle-region-arrow" ${nextRegionIdx !== null ? `onclick="switchBuildingRegion(${nextRegionIdx})"` : 'disabled'}>▶</button>
+                        <div class="castle-bonus-card castle-bonus-card-compact ${bonusStateClass}">
+                            <div class="castle-bonus-value">🎁 🪙 ${CASTLE_COMPLETION_BONUS.coins.toLocaleString()} · 👑 ${CASTLE_COMPLETION_BONUS.crowns}</div>
+                            <div class="castle-bonus-state">${bonusState}</div>
+                        </div>
                     </div>
-                    <div class="castle-bonus-card ${bonusStateClass}">
-                        <div class="castle-bonus-title">🎁 Completion Bonus</div>
-                        <div class="castle-bonus-value">🪙 ${CASTLE_COMPLETION_BONUS.coins.toLocaleString()} · 👑 ${CASTLE_COMPLETION_BONUS.crowns}</div>
-                        <div class="castle-bonus-state">${bonusState}</div>
+                    <div class="castle-hud-center castle-hud-center-compact">
+                        <div class="castle-region-pill">${curRegion.name}</div>
+                        <div class="castle-progress-wheel" style="--pct:${completionPct}">
+                            <span>🏰</span>
+                        </div>
+                        <div class="castle-level-inline">LV ${builtLevels}/${totalLevels}</div>
                     </div>
 
                     ${castle.unlocked
@@ -816,13 +811,14 @@ function spinKingdomSlot() {
 
             if (isBoss && isRegionCleared(curRegion)) {
                 popupTitle = "🔥 REGION CLEARED 🔥";
-                curRegion.castle.unlocked = true;
-                popupMsg = `+1 Crown (node).<br><b>${curRegion.name} Building</b> unlocked.`;
+                popupMsg = "+1 Crown (node).";
 
                 if (state.currentRegionIdx < state.regions.length - 1) {
                     const nextIdx = state.currentRegionIdx + 1;
                     state.regions[nextIdx].unlocked = true;
+                    state.regions[nextIdx].castle.unlocked = true;
                     popupMsg += `<br><b>${state.regions[nextIdx].name}</b> unlocked.`;
+                    popupMsg += `<br><b>${state.regions[nextIdx].name} Building</b> unlocked.`;
                     continueAction = `travelToRegion(${nextIdx}); closePopup();`;
                 } else {
                     popupMsg += "<br><b>All regions conquered!</b>";

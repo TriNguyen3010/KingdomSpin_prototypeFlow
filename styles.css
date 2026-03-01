@@ -1104,25 +1104,6 @@ body {
   font-size: 1.45rem;
 }
 
-.castle-progress-pips {
-  display: flex;
-  gap: 8px;
-}
-
-.castle-pip {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: rgba(148, 163, 184, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.castle-pip.on {
-  background: #fbbf24;
-  border-color: rgba(254, 240, 138, 0.9);
-  box-shadow: 0 0 10px rgba(251, 191, 36, 0.65);
-}
-
 .crowns-available {
   display: inline-flex;
   align-items: center;
@@ -1379,14 +1360,14 @@ body {
 
 .castle-region-nav {
   display: grid;
-  grid-template-columns: 48px 1fr 48px;
+  grid-template-columns: 56px 44px 1fr 44px auto;
   align-items: center;
   gap: 10px;
 }
 
 .castle-region-tabs {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -1397,8 +1378,8 @@ body {
   background: rgba(15, 23, 42, 0.78);
   color: #cbd5e1;
   border-radius: 999px;
-  padding: 7px 12px;
-  font-size: 0.8rem;
+  padding: 6px 11px;
+  font-size: 0.76rem;
   font-weight: 800;
   cursor: pointer;
   transition: transform 0.15s ease, border-color 0.15s ease, color 0.15s ease;
@@ -1443,22 +1424,23 @@ body {
   gap: 14px;
 }
 
-.castle-bonus-title {
-  color: #e2e8f0;
-  font-size: 0.92rem;
-  font-weight: 900;
+.castle-bonus-card-compact {
+  padding: 8px 12px;
+  border-radius: 14px;
+  gap: 10px;
+  justify-self: end;
 }
 
 .castle-bonus-value {
   color: #fef3c7;
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   font-weight: 800;
 }
 
 .castle-bonus-state {
   border-radius: 999px;
-  padding: 5px 10px;
-  font-size: 0.75rem;
+  padding: 4px 9px;
+  font-size: 0.72rem;
   font-weight: 900;
   letter-spacing: 0.3px;
   border: 1px solid rgba(148, 163, 184, 0.55);
@@ -1479,6 +1461,24 @@ body {
 
 .castle-bonus-card.locked .castle-bonus-state {
   background: rgba(71, 85, 105, 0.35);
+}
+
+.castle-hud-center-compact {
+  justify-content: center;
+}
+
+.castle-level-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 84px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: #e2e8f0;
+  font-size: 0.85rem;
+  font-weight: 900;
 }
 
 .build-objects-container.castle-plot-grid {
@@ -1575,13 +1575,12 @@ body {
   }
 
   .castle-region-nav {
-    grid-template-columns: 40px 1fr 40px;
+    grid-template-columns: 56px 38px 1fr 38px;
   }
 
-  .castle-bonus-card {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
+  .castle-bonus-card-compact {
+    grid-column: 1 / -1;
+    justify-self: stretch;
   }
 
   .build-objects-container.castle-plot-grid {
