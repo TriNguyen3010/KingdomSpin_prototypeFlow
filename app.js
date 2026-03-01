@@ -1,43 +1,39 @@
-const CASTLE_INITIAL_UNLOCKED_PLOTS = 3;
-const CASTLE_SPIN_BASE_COST = 6000;
-const CASTLE_PLOT_BLUEPRINT = [
-    { key: 'wall', icon: '🧱', cost: 4 },
-    { key: 'gate', icon: '🚪', cost: 6 },
-    { key: 'tower', icon: '🗼', cost: 8 },
-    { key: 'fountain', icon: '⛲', cost: 7 },
-    { key: 'garden', icon: '🌳', cost: 6 },
-    { key: 'banner', icon: '🚩', cost: 5 },
-    { key: 'forge', icon: '⚒️', cost: 9 },
-    { key: 'stable', icon: '🐎', cost: 8 },
-    { key: 'watch', icon: '🛡️', cost: 10 },
-    { key: 'hall', icon: '🏛️', cost: 12 },
-    { key: 'throne', icon: '👑', cost: 15 },
-    { key: 'vault', icon: '💎', cost: 18 }
+const CASTLE_SLOT_MAX_LEVEL = 3;
+const CASTLE_COMPLETION_BONUS = { coins: 25000, crowns: 8 };
+const CASTLE_SLOT_BLUEPRINT = [
+    { key: 'keep', name: 'Keep', baseCost: 4, visuals: ['🪨', '🧱', '🏯', '🏰'] },
+    { key: 'gate', name: 'Gate', baseCost: 5, visuals: ['🚧', '🚪', '🛡️', '🚪✨'] },
+    { key: 'tower', name: 'Tower', baseCost: 6, visuals: ['🪵', '🗼', '🏛️', '🗼✨'] },
+    { key: 'garden', name: 'Garden', baseCost: 4, visuals: ['🌱', '🌿', '🌳', '🌺'] }
 ];
 
-function createRegionCastle(regionIdx) {
+function createRegionCastle() {
     return {
-        spinCost: CASTLE_SPIN_BASE_COST + (regionIdx * 1500),
-        plots: CASTLE_PLOT_BLUEPRINT.map((plot, idx) => ({
-            ...plot,
-            unlocked: idx < CASTLE_INITIAL_UNLOCKED_PLOTS,
-            built: false
+        unlocked: false,
+        completionClaimed: false,
+        slots: CASTLE_SLOT_BLUEPRINT.map((slot) => ({
+            ...slot,
+            level: 0,
+            maxLevel: CASTLE_SLOT_MAX_LEVEL
         }))
     };
 }
 
 function createInitialRegions() {
     return [
-        { id: 'forest', name: '🌲 Forest', unlocked: true, nodes: 3 },
-        { id: 'desert', name: '🏜 Desert', unlocked: false, nodes: 3 },
-        { id: 'snow', name: '❄ Snow', unlocked: false, nodes: 3 }
-    ].map((region, idx) => ({
-        ...region,
-        clearedNodes: 0,
-        nodeProgress: 0,
-        regionBonusClaimed: false,
-        castle: createRegionCastle(idx)
-    }));
+        { id: 'home', name: '🏠 Home', icon: '🏠', unlocked: true, nodes: 3 },
+        { id: 'desert', name: '🏜 Desert', icon: '🏜', unlocked: false, nodes: 3 },
+        { id: 'snow', name: '❄ Snow', icon: '❄️', unlocked: false, nodes: 3 }
+    ].map((region, idx) => {
+        const castle = createRegionCastle();
+        if (idx === 0) castle.unlocked = true; // Home building is available from start
+        return {
+            ...region,
+            clearedNodes: 0,
+            nodeProgress: 0,
+            castle
+        };
+    });
 }
 
 function isRegionCleared(region) {
@@ -48,16 +44,38 @@ function getRegionCurrentNode(region) {
     return Math.min(region.clearedNodes + 1, region.nodes);
 }
 
+function getSlotUpgradeCost(slot) {
+    return slot.baseCost * (slot.level + 1);
+}
+
+function isCastleCompleted(castle) {
+    return castle.slots.every((slot) => slot.level >= slot.maxLevel);
+}
+
+function getUnlockedCastleIndexes() {
+    return state.regions
+        .map((region, idx) => ({ region, idx }))
+        .filter(({ region }) => region.castle.unlocked)
+        .map(({ idx }) => idx);
+}
+
+function getDefaultBuildingRegionIdx() {
+    if (state.regions[state.currentRegionIdx]?.castle?.unlocked) return state.currentRegionIdx;
+    const unlocked = getUnlockedCastleIndexes();
+    return unlocked.length > 0 ? unlocked[0] : 0;
+}
+
 // State Management
 const state = {
     coins: 402685,
-    crowns: 12,
+    crowns: 500,
     mode: 'casino', // 'casino' | 'kingdom'
     screen: 'home', // 'home' | 'casino-slot' | 'kingdom-slot' | 'castle'
 
     // Expanded Region & Node State
     regions: createInitialRegions(),
     currentRegionIdx: 0,
+    buildingRegionIdx: 0,
 
     universalOpen: false,
 
@@ -120,10 +138,10 @@ function renderTopBar() {
     } else {
         els.topBarRight.innerHTML = `
             <button class="btn" id="btn-universal" style="background: linear-gradient(to bottom, #8b5cf6, #5b21b6); border-color: #a78bfa;">🌍 Universal</button>
-            <button class="btn" id="btn-castle" style="background: linear-gradient(to bottom, #d946ef, #a21caf); border-color: #e879f9;">🏰 Castle</button>
+            <button class="btn" id="btn-building" style="background: linear-gradient(to bottom, #d946ef, #a21caf); border-color: #e879f9;">🏗️ Building</button>
         `;
         document.getElementById('btn-universal').addEventListener('click', toggleUniversalPanel);
-        document.getElementById('btn-castle').addEventListener('click', () => switchScreen('castle'));
+        document.getElementById('btn-building').addEventListener('click', () => switchScreen('castle'));
     }
 }
 
@@ -183,11 +201,11 @@ function renderScreen() {
             const activeNode = getRegionCurrentNode(curRegion);
             const regionCleared = isRegionCleared(curRegion);
             const regionThemes = {
-                forest: { border: '#22c55e', glow: 'rgba(34,197,94,0.55)', bg: 'rgba(20,83,45,0.18)', bossBorder: '#f87171' },
+                home: { border: '#22c55e', glow: 'rgba(34,197,94,0.55)', bg: 'rgba(20,83,45,0.18)', bossBorder: '#f87171' },
                 desert: { border: '#f59e0b', glow: 'rgba(245,158,11,0.55)', bg: 'rgba(120,53,15,0.2)', bossBorder: '#f87171' },
                 snow: { border: '#67e8f9', glow: 'rgba(103,232,249,0.55)', bg: 'rgba(14,116,144,0.2)', bossBorder: '#f87171' }
             };
-            const theme = regionThemes[curRegion.id] || regionThemes.forest;
+            const theme = regionThemes[curRegion.id] || regionThemes.home;
 
             const nextRegion = state.currentRegionIdx < state.regions.length - 1 ? state.regions[state.currentRegionIdx + 1] : null;
             const nextArrow = nextRegion && nextRegion.unlocked
@@ -267,11 +285,11 @@ function renderScreen() {
 
         // Per-region themes
         const regionThemes = {
-            forest: { border: '#22c55e', glow: 'rgba(34,197,94,0.55)', bg: 'rgba(20,83,45,0.18)', bossBorder: '#f87171' },
+            home: { border: '#22c55e', glow: 'rgba(34,197,94,0.55)', bg: 'rgba(20,83,45,0.18)', bossBorder: '#f87171' },
             desert: { border: '#f59e0b', glow: 'rgba(245,158,11,0.55)', bg: 'rgba(120,53,15,0.2)', bossBorder: '#f87171' },
             snow: { border: '#67e8f9', glow: 'rgba(103,232,249,0.55)', bg: 'rgba(14,116,144,0.2)', bossBorder: '#f87171' }
         };
-        const theme = regionThemes[curRegion.id] || regionThemes.forest;
+        const theme = regionThemes[curRegion.id] || regionThemes.home;
 
         // Arrow nav: can go to adjacent unlocked regions
         const prevRegion = state.currentRegionIdx > 0 ? state.regions[state.currentRegionIdx - 1] : null;
@@ -345,11 +363,11 @@ function renderScreen() {
         const activeNode = getRegionCurrentNode(curRegion);
         const regionCleared = isRegionCleared(curRegion);
         const regionThemes = {
-            forest: { accent: '#22c55e', reelBorder: '#22c55e', reelGlow: 'rgba(34,197,94,0.25)' },
+            home: { accent: '#22c55e', reelBorder: '#22c55e', reelGlow: 'rgba(34,197,94,0.25)' },
             desert: { accent: '#f59e0b', reelBorder: '#f59e0b', reelGlow: 'rgba(245,158,11,0.25)' },
             snow: { accent: '#67e8f9', reelBorder: '#67e8f9', reelGlow: 'rgba(103,232,249,0.25)' }
         };
-        const theme = regionThemes[curRegion.id] || regionThemes.forest;
+        const theme = regionThemes[curRegion.id] || regionThemes.home;
 
         const curGoal = getNodeGoal(state.currentRegionIdx, activeNode);
         const pct = regionCleared ? 100 : Math.min(100, (curRegion.nodeProgress / curGoal) * 100);
@@ -387,38 +405,55 @@ function renderScreen() {
             </div>
         `;
     } else if (state.screen === 'castle') {
-        const curRegion = state.regions[state.currentRegionIdx];
-        const castle = curRegion.castle;
-        const unlockedPlots = castle.plots.filter(plot => plot.unlocked).length;
-        const builtPlots = castle.plots.filter(plot => plot.built).length;
-        const lockedPlots = castle.plots.length - unlockedPlots;
-        const completionPct = unlockedPlots === 0 ? 0 : Math.round((builtPlots / unlockedPlots) * 100);
-        const crownsNeeded = castle.plots.reduce((sum, plot) => {
-            return sum + ((plot.unlocked && !plot.built) ? plot.cost : 0);
-        }, 0);
-        const canSpinExpand = lockedPlots > 0 && state.coins >= castle.spinCost;
+        const unlockedCastleIdxs = getUnlockedCastleIndexes();
+        if (!unlockedCastleIdxs.includes(state.buildingRegionIdx)) {
+            state.buildingRegionIdx = getDefaultBuildingRegionIdx();
+        }
 
-        const buildHtml = castle.plots.map((plot, idx) => {
-            const canBuild = plot.unlocked && !plot.built && state.crowns >= plot.cost;
-            const stateIcon = plot.built ? '✅' : (plot.unlocked ? (canBuild ? '⚒️' : '🔒') : '🔒');
-            const actionAttr = (plot.unlocked && !plot.built) ? `onclick="buildCastlePlot(${idx})"` : 'disabled';
+        const curRegion = state.regions[state.buildingRegionIdx];
+        const castle = curRegion.castle;
+        const totalLevels = castle.slots.reduce((sum, slot) => sum + slot.maxLevel, 0);
+        const builtLevels = castle.slots.reduce((sum, slot) => sum + slot.level, 0);
+        const completionPct = totalLevels === 0 ? 0 : Math.round((builtLevels / totalLevels) * 100);
+        const completed = isCastleCompleted(castle);
+        const unlockedNavIdx = unlockedCastleIdxs.indexOf(state.buildingRegionIdx);
+        const prevRegionIdx = unlockedNavIdx > 0 ? unlockedCastleIdxs[unlockedNavIdx - 1] : null;
+        const nextRegionIdx = unlockedNavIdx >= 0 && unlockedNavIdx < unlockedCastleIdxs.length - 1
+            ? unlockedCastleIdxs[unlockedNavIdx + 1]
+            : null;
+
+        const buildHtml = castle.slots.map((slot, idx) => {
+            const isMax = slot.level >= slot.maxLevel;
+            const upgradeCost = isMax ? 0 : getSlotUpgradeCost(slot);
+            const canBuild = state.crowns >= upgradeCost;
+            const stateIcon = isMax ? '✅' : (canBuild ? '⚒️' : '🔒');
+            const actionAttr = isMax ? 'disabled' : `onclick="upgradeCastleSlot(${idx})"`;
+            const visual = slot.visuals[Math.min(slot.level, slot.visuals.length - 1)];
             const cls = [
                 'build-obj',
                 'castle-plot',
-                plot.built ? 'built' : '',
-                !plot.unlocked ? 'locked' : '',
-                (plot.unlocked && !plot.built && !canBuild) ? 'insufficient' : ''
+                isMax ? 'built' : '',
+                (!isMax && !canBuild) ? 'insufficient' : ''
             ].filter(Boolean).join(' ');
-            const chip = plot.built ? 'BUILT' : (plot.unlocked ? `👑 ${plot.cost}` : 'LOCKED');
+            const chip = isMax ? 'MAX' : `👑 ${upgradeCost}`;
             return `
                 <button class="${cls}" ${actionAttr}>
                     <div class="build-state">${stateIcon}</div>
                     <div class="castle-plot-id">#${idx + 1}</div>
-                    <div class="build-obj-icon">${plot.icon}</div>
+                    <div class="build-obj-icon">${visual}</div>
+                    <div class="castle-slot-name">${slot.name}</div>
+                    <div class="castle-slot-level">LV ${slot.level}/${slot.maxLevel}</div>
                     <div class="build-cost-chip">${chip}</div>
                 </button>
             `;
         }).join('');
+        const castleTabs = unlockedCastleIdxs.map((idx) => {
+            const region = state.regions[idx];
+            const active = idx === state.buildingRegionIdx;
+            return `<button class="castle-region-tab ${active ? 'active' : ''}" onclick="switchBuildingRegion(${idx})">${region.icon || '🏰'} ${region.name.replace(/^[^\\s]+\\s/, '')}</button>`;
+        }).join('');
+        const bonusState = !castle.unlocked ? 'LOCKED' : (castle.completionClaimed ? 'CLAIMED' : 'PENDING');
+        const bonusStateClass = !castle.unlocked ? 'locked' : (castle.completionClaimed ? 'claimed' : 'pending');
 
         html = `
             <div class="screen active castle-bg">
@@ -431,37 +466,35 @@ function renderScreen() {
                                 <span>🏰</span>
                             </div>
                             <div class="castle-progress-pips">
-                                ${castle.plots.map((plot) => `<span class="castle-pip ${plot.built ? 'on' : ''}"></span>`).join('')}
-                            </div>
-                        </div>
-                        <div class="castle-resource-stack">
-                            <div class="crowns-available" aria-label="Crowns">
-                                <span>👑</span>
-                                <span>${state.crowns.toLocaleString()}</span>
-                            </div>
-                            <div class="coins-available" aria-label="Coins">
-                                <span>🪙</span>
-                                <span>${state.coins.toLocaleString()}</span>
+                                ${castle.slots.map((slot) => `<span class="castle-pip ${slot.level >= slot.maxLevel ? 'on' : ''}"></span>`).join('')}
                             </div>
                         </div>
                     </div>
-
-                    <div class="castle-summary">
-                        <div class="castle-stat-chip">🏗️ ${builtPlots}/${unlockedPlots}</div>
-                        <div class="castle-stat-chip">🔓 ${lockedPlots}</div>
-                        <div class="castle-stat-chip">👑 ${crownsNeeded}</div>
+                    <div class="castle-region-nav">
+                        <button class="castle-region-arrow" ${prevRegionIdx !== null ? `onclick="switchBuildingRegion(${prevRegionIdx})"` : 'disabled'}>◀</button>
+                        <div class="castle-region-tabs">${castleTabs}</div>
+                        <button class="castle-region-arrow" ${nextRegionIdx !== null ? `onclick="switchBuildingRegion(${nextRegionIdx})"` : 'disabled'}>▶</button>
+                    </div>
+                    <div class="castle-bonus-card ${bonusStateClass}">
+                        <div class="castle-bonus-title">🎁 Completion Bonus</div>
+                        <div class="castle-bonus-value">🪙 ${CASTLE_COMPLETION_BONUS.coins.toLocaleString()} · 👑 ${CASTLE_COMPLETION_BONUS.crowns}</div>
+                        <div class="castle-bonus-state">${bonusState}</div>
                     </div>
 
-                    <div class="build-objects-container castle-plot-grid">
-                        ${buildHtml}
-                    </div>
-
-                    <div class="castle-spin-bar">
-                        <button class="castle-spin-btn ${canSpinExpand ? '' : 'disabled'}" ${canSpinExpand ? 'onclick="spinCastleExpansion()"' : 'disabled'}>
-                            🎲 SPIN OPEN LAND · 🪙 ${castle.spinCost.toLocaleString()}
-                        </button>
-                        <div class="castle-spin-note">${lockedPlots > 0 ? `Remaining locked plots: ${lockedPlots}` : 'All plots unlocked'}</div>
-                    </div>
+                    ${castle.unlocked
+                ? `
+                            <div class="build-objects-container castle-plot-grid">
+                                ${buildHtml}
+                            </div>
+                            ${completed ? '<div class="castle-complete-banner">🏆 CASTLE COMPLETED</div>' : ''}
+                        `
+                : `
+                            <div class="castle-lock-panel">
+                                <div class="castle-lock-title">🔒 BUILDING LOCKED</div>
+                                <div class="castle-lock-note">Defeat the boss of ${curRegion.name} to unlock this castle.</div>
+                            </div>
+                        `
+            }
                 </div>
             </div>
         `;
@@ -511,6 +544,9 @@ function switchScreen(newScreen) {
     els.mainContent.style.transform = goingBack ? 'scale(1.06)' : 'scale(0.94)';
 
     setTimeout(() => {
+        if (newScreen === 'castle') {
+            state.buildingRegionIdx = getDefaultBuildingRegionIdx();
+        }
         state.screen = newScreen;
         closePanels();
         renderScreen();
@@ -529,17 +565,26 @@ function toggleUniversalPanel() {
     state.universalOpen = !state.universalOpen;
     if (!state.universalOpen) { closePanels(); return; }
 
-    // Galaxy map positions — spread across full canvas
     const W = 900, H = 560;
-    const nodes = [
-        { id: 'castle', label: 'Castle', icon: '🏰', x: 110, y: 280, unlocked: true, isActive: false, isCastle: true },
-        { id: 'forest', label: 'Forest', icon: '🌲', x: 330, y: 140, unlocked: state.regions[0].unlocked, isActive: state.currentRegionIdx === 0 },
-        { id: 'desert', label: 'Desert', icon: '🏜', x: 560, y: 360, unlocked: state.regions[1].unlocked, isActive: state.currentRegionIdx === 1 },
-        { id: 'snow', label: 'Snow', icon: '❄️', x: 780, y: 160, unlocked: state.regions[2].unlocked, isActive: state.currentRegionIdx === 2 },
+    const positions = [
+        { x: 200, y: 280 },
+        { x: 460, y: 160 },
+        { x: 720, y: 300 }
     ];
-
-    // Connections: castle→forest, forest→desert, desert→snow
-    const links = [[0, 1], [1, 2], [2, 3]];
+    const nodes = state.regions.map((region, idx) => {
+        const pos = positions[idx] || { x: 180 + (idx * 220), y: 180 + ((idx % 2) * 120) };
+        return {
+            id: region.id,
+            label: region.name.replace(/^[^\s]+\s/, ''),
+            icon: region.icon || '🏰',
+            x: pos.x,
+            y: pos.y,
+            unlocked: region.unlocked,
+            isActive: state.currentRegionIdx === idx,
+            regionIdx: idx
+        };
+    });
+    const links = nodes.slice(0, -1).map((_, idx) => [idx, idx + 1]);
 
     // SVG lines
     let svgLines = links.map(([a, b]) => {
@@ -552,19 +597,13 @@ function toggleUniversalPanel() {
             class="${unlocked ? 'galaxy-link-active' : ''}" />`;
     }).join('');
 
-    // Node circles
     let svgNodes = nodes.map((n, i) => {
-        const regionIdx = i - 1; // offset: index 0 is castle
-        const isRegion = !n.isCastle;
         const glow = n.isActive ? 'url(#glow-active)' : (n.unlocked ? 'url(#glow-unlocked)' : 'none');
-        const color = n.isCastle ? '#f59e0b' :
-            (n.id === 'forest' ? '#22c55e' : n.id === 'desert' ? '#f59e0b' : '#67e8f9');
-        const r = n.isCastle ? 36 : 30;
+        const color = n.id === 'home' ? '#22c55e' : (n.id === 'desert' ? '#f59e0b' : '#67e8f9');
+        const r = 30;
         const opacity = n.unlocked ? 1 : 0.35;
-        const clickable = (isRegion && n.unlocked) || n.isCastle;
-        const onclick = n.isCastle
-            ? `switchScreen('castle'); closePanels();`
-            : (n.unlocked ? `travelToRegion(${regionIdx}); closePanels();` : '');
+        const clickable = n.unlocked;
+        const onclick = n.unlocked ? `travelToRegion(${n.regionIdx}); closePanels();` : '';
 
         return `
         <g class="galaxy-node-g ${n.isActive ? 'galaxy-active' : ''} ${clickable ? 'galaxy-clickable' : ''}"
@@ -574,8 +613,8 @@ function toggleUniversalPanel() {
             <circle r="${r}" fill="rgba(15,15,30,0.9)"
                 stroke="${color}" stroke-width="${n.isActive ? 3 : 1.5}"
                 filter="${glow}" />
-            <text text-anchor="middle" dominant-baseline="central" font-size="${n.isCastle ? 22 : 18}">${n.icon}</text>
-            ${!n.unlocked && isRegion ? `<text text-anchor="middle" dominant-baseline="central" font-size="13" y="1">🔒</text>` : ''}
+            <text text-anchor="middle" dominant-baseline="central" font-size="18">${n.icon}</text>
+            ${!n.unlocked ? `<text text-anchor="middle" dominant-baseline="central" font-size="13" y="1">🔒</text>` : ''}
             <text text-anchor="middle" y="${r + 16}" font-size="11" fill="${n.unlocked ? 'white' : '#6b7280'}"
                 font-family="Outfit, sans-serif" font-weight="700">${n.label}</text>
             ${n.isActive ? `<text text-anchor="middle" y="${r + 28}" font-size="9" fill="${color}"
@@ -619,6 +658,12 @@ function travelToRegion(idx) {
     state.mode = 'kingdom';
     state.screen = 'home';
     closePanels();
+    renderScreen();
+}
+
+function switchBuildingRegion(idx) {
+    if (!state.regions[idx] || !state.regions[idx].castle.unlocked) return;
+    state.buildingRegionIdx = idx;
     renderScreen();
 }
 
@@ -771,12 +816,8 @@ function spinKingdomSlot() {
 
             if (isBoss && isRegionCleared(curRegion)) {
                 popupTitle = "🔥 REGION CLEARED 🔥";
-
-                if (!curRegion.regionBonusClaimed) {
-                    state.crowns += 5;
-                    curRegion.regionBonusClaimed = true;
-                    popupMsg = "+1 Crown (node) +5 Crowns (region bonus).";
-                }
+                curRegion.castle.unlocked = true;
+                popupMsg = `+1 Crown (node).<br><b>${curRegion.name} Building</b> unlocked.`;
 
                 if (state.currentRegionIdx < state.regions.length - 1) {
                     const nextIdx = state.currentRegionIdx + 1;
@@ -798,48 +839,45 @@ function spinKingdomSlot() {
     }
 }
 
-function buildCastlePlot(plotIdx) {
-    const curRegion = state.regions[state.currentRegionIdx];
-    const plot = curRegion.castle.plots[plotIdx];
-    if (!plot || !plot.unlocked || plot.built) return;
-
-    if (state.crowns < plot.cost) {
-        showPopup("🚫 NOT ENOUGH CROWNS", `Need ${plot.cost} crowns to build.`);
-        return;
-    }
-
-    state.crowns -= plot.cost;
-    plot.built = true;
-
-    renderTopBar();
-    renderScreen();
-    spawnFloatingReward('🏗 Built!', window.innerWidth / 2, window.innerHeight / 2);
-}
-
-function spinCastleExpansion() {
-    const curRegion = state.regions[state.currentRegionIdx];
+function upgradeCastleSlot(slotIdx) {
+    const curRegion = state.regions[state.buildingRegionIdx];
     const castle = curRegion.castle;
-    const lockedPlots = castle.plots.filter(plot => !plot.unlocked);
-
-    if (lockedPlots.length === 0) {
-        showPopup("✅ FULLY EXPANDED", "All plots are already unlocked.");
+    if (!castle.unlocked) {
+        showPopup("🔒 BUILDING LOCKED", `Defeat ${curRegion.name} boss to unlock this building.`);
         return;
     }
 
-    if (state.coins < castle.spinCost) {
-        showPopup("🚫 NOT ENOUGH COINS", `Need ${castle.spinCost.toLocaleString()} coins to spin.`);
+    const slot = castle.slots[slotIdx];
+    if (!slot || slot.level >= slot.maxLevel) return;
+
+    const cost = getSlotUpgradeCost(slot);
+    if (state.crowns < cost) {
+        showPopup("🚫 NOT ENOUGH CROWNS", `Need ${cost} crowns to upgrade ${slot.name}.`);
         return;
     }
 
-    const spentCoins = castle.spinCost;
-    state.coins -= spentCoins;
-    lockedPlots[0].unlocked = true;
-    castle.spinCost = Math.round(castle.spinCost * 1.25);
+    state.crowns -= cost;
+    slot.level += 1;
 
     renderTopBar();
     renderScreen();
-    spawnFloatingReward('🗺️ +1 Plot', window.innerWidth / 2, window.innerHeight / 2 - 20);
-    setTimeout(() => spawnFloatingReward(`🪙 -${spentCoins.toLocaleString()}`, window.innerWidth / 2 + 40, window.innerHeight / 2 + 30), 200);
+    spawnFloatingReward(`🏗 ${slot.name} LV ${slot.level}`, window.innerWidth / 2, window.innerHeight / 2);
+
+    if (isCastleCompleted(castle) && !castle.completionClaimed) {
+        castle.completionClaimed = true;
+        state.coins += CASTLE_COMPLETION_BONUS.coins;
+        state.crowns += CASTLE_COMPLETION_BONUS.crowns;
+        renderTopBar();
+        renderScreen();
+        setTimeout(() => {
+            showPopup(
+                "🏰 CASTLE COMPLETE",
+                `Completion bonus:<br>🪙 +${CASTLE_COMPLETION_BONUS.coins.toLocaleString()}<br>👑 +${CASTLE_COMPLETION_BONUS.crowns}`,
+                "closePopup();",
+                true
+            );
+        }, 350);
+    }
 }
 
 // Initial Render

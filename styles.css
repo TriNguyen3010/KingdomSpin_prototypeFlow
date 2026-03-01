@@ -1363,7 +1363,7 @@ body {
 
 /* --- Castle Plot System (Region-based) --- */
 .castle-hud.castle-hud-compact {
-  grid-template-columns: 68px 1fr 240px;
+  grid-template-columns: 68px 1fr;
 }
 
 .castle-region-pill {
@@ -1377,45 +1377,108 @@ body {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 20px rgba(0, 0, 0, 0.35);
 }
 
-.castle-resource-stack {
-  display: flex;
-  flex-direction: column;
+.castle-region-nav {
+  display: grid;
+  grid-template-columns: 48px 1fr 48px;
+  align-items: center;
   gap: 10px;
-  align-items: stretch;
-  justify-self: end;
-  min-width: 220px;
 }
 
-.coins-available {
-  display: inline-flex;
-  align-items: center;
+.castle-region-tabs {
+  display: flex;
   justify-content: center;
   gap: 8px;
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.45), rgba(180, 83, 9, 0.28));
-  padding: 11px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(251, 191, 36, 0.78);
-  color: #fffbeb;
-  font-weight: 800;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 8px 20px rgba(0, 0, 0, 0.32);
-}
-
-.castle-summary {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
   flex-wrap: wrap;
 }
 
-.castle-stat-chip {
-  background: rgba(15, 23, 42, 0.86);
-  border: 1px solid rgba(148, 163, 184, 0.46);
-  color: #e2e8f0;
+.castle-region-tab {
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  background: rgba(15, 23, 42, 0.78);
+  color: #cbd5e1;
   border-radius: 999px;
-  padding: 9px 14px;
-  font-size: 0.92rem;
+  padding: 7px 12px;
+  font-size: 0.8rem;
   font-weight: 800;
-  letter-spacing: 0.2px;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.castle-region-tab:hover {
+  transform: translateY(-1px);
+  border-color: rgba(251, 191, 36, 0.75);
+}
+
+.castle-region-tab.active {
+  color: #fef3c7;
+  border-color: rgba(251, 191, 36, 0.9);
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.38), rgba(30, 41, 59, 0.9));
+}
+
+.castle-region-arrow {
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: rgba(15, 23, 42, 0.85);
+  color: #e2e8f0;
+  border-radius: 12px;
+  width: 44px;
+  height: 44px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.castle-region-arrow:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.castle-bonus-card {
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.8), rgba(15, 23, 42, 0.94));
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.castle-bonus-title {
+  color: #e2e8f0;
+  font-size: 0.92rem;
+  font-weight: 900;
+}
+
+.castle-bonus-value {
+  color: #fef3c7;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.castle-bonus-state {
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  color: #cbd5e1;
+}
+
+.castle-bonus-card.pending .castle-bonus-state {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(251, 191, 36, 0.8);
+  color: #fde68a;
+}
+
+.castle-bonus-card.claimed .castle-bonus-state {
+  background: rgba(16, 185, 129, 0.22);
+  border-color: rgba(16, 185, 129, 0.75);
+  color: #6ee7b7;
+}
+
+.castle-bonus-card.locked .castle-bonus-state {
+  background: rgba(71, 85, 105, 0.35);
 }
 
 .build-objects-container.castle-plot-grid {
@@ -1426,6 +1489,19 @@ body {
 .castle-plot {
   min-height: 130px;
   padding-top: 24px;
+}
+
+.castle-slot-name {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #e2e8f0;
+  letter-spacing: 0.2px;
+}
+
+.castle-slot-level {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #bfdbfe;
 }
 
 .castle-plot.locked {
@@ -1447,48 +1523,43 @@ body {
   letter-spacing: 0.2px;
 }
 
-.castle-spin-bar {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+.castle-lock-panel {
+  flex: 1;
+  min-height: 0;
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.75), rgba(15, 23, 42, 0.92));
+  display: grid;
+  place-items: center;
+  text-align: center;
   gap: 10px;
+  padding: 40px;
 }
 
-.castle-spin-btn {
-  appearance: none;
-  border: 2px solid rgba(251, 191, 36, 0.85);
-  border-radius: 16px;
-  background: linear-gradient(180deg, #10b981, #047857);
-  color: #ecfdf5;
-  padding: 14px 28px;
-  font-size: 1rem;
+.castle-lock-title {
+  font-size: 1.5rem;
   font-weight: 900;
-  letter-spacing: 0.3px;
-  cursor: pointer;
-  box-shadow: 0 10px 0 rgba(4, 120, 87, 0.75), 0 16px 24px rgba(0, 0, 0, 0.4);
-  transition: transform 0.15s ease, filter 0.15s ease;
+  color: #f8fafc;
 }
 
-.castle-spin-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  filter: brightness(1.05);
-}
-
-.castle-spin-btn:active:not(:disabled) {
-  transform: translateY(2px);
-}
-
-.castle-spin-btn.disabled,
-.castle-spin-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.castle-spin-note {
-  color: #cbd5e1;
-  font-size: 0.9rem;
+.castle-lock-note {
+  font-size: 1rem;
   font-weight: 700;
+  color: #cbd5e1;
+  max-width: 520px;
+}
+
+.castle-complete-banner {
+  align-self: center;
+  justify-self: center;
+  background: linear-gradient(180deg, #fbbf24, #f59e0b);
+  border: 2px solid rgba(254, 240, 138, 0.9);
+  border-radius: 999px;
+  color: #422006;
+  font-weight: 900;
+  letter-spacing: 0.35px;
+  padding: 10px 20px;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.35);
 }
 
 .spin-btn:disabled {
@@ -1503,11 +1574,14 @@ body {
     grid-template-columns: 56px 1fr;
   }
 
-  .castle-resource-stack {
-    grid-column: 1 / -1;
-    flex-direction: row;
-    min-width: 0;
-    justify-self: stretch;
+  .castle-region-nav {
+    grid-template-columns: 40px 1fr 40px;
+  }
+
+  .castle-bonus-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
 
   .build-objects-container.castle-plot-grid {
