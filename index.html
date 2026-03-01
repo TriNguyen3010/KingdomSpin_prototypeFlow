@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Prototype</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div id="game-container">
+        <!-- TOP BAR -->
+        <header id="top-bar">
+            <div class="top-bar-left">
+                <div class="resource-badge coin-badge">
+                    <span class="icon">🪙</span>
+                    <span id="coin-amount">402,685</span>
+                </div>
+                <div class="resource-badge crown-badge">
+                    <span class="icon">👑</span>
+                    <span id="crown-amount">12</span>
+                </div>
+            </div>
+            <div id="top-bar-right" class="top-bar-right">
+                <!-- Injected via JS based on mode -->
+            </div>
+        </header>
+
+        <!-- MAIN CONTENT AREA -->
+        <main id="main-content">
+            <!-- Casino, Kingdom, Map, Slot screens will be injected here -->
+        </main>
+
+    </div>
+
+    <!-- OVERLAYS & MODALS (Moved outside to prevent clipping) -->
+    <div id="overlay" class="hidden"></div>
+    <div id="universal-panel" class="slide-panel hidden">
+        <h3>REGION SELECT</h3>
+        <ul class="region-list">
+            <li class="active"><span class="icon">🌲</span> Forest <span class="status">(Active)</span></li>
+            <li class="locked"><span class="icon">🏜</span> Desert <span class="status">(Locked)</span></li>
+            <li class="locked"><span class="icon">❄</span> Snow <span class="status">(Locked)</span></li>
+        </ul>
+    </div>
+
+    <div id="popup" class="popup hidden">
+        <!-- Level Complete / Build notification -->
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
