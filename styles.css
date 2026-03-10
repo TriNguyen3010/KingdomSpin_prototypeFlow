@@ -869,6 +869,12 @@ body {
 }
 
 .map-nodes {
+  --node-size: 70px;
+  --boss-node-size: 90px;
+  --node-row-gap: 160px;
+  --path-line-length: 160px;
+  --chest-size: 70px;
+  --node-to-chest-gap: 45px;
   position: absolute;
   top: 55%;
   left: 50%;
@@ -881,13 +887,61 @@ body {
 
 .node-row {
   display: flex;
-  gap: 80px;
+  gap: var(--node-row-gap);
   align-items: center;
   justify-content: center;
 }
 
 .node-wrapper {
   position: relative;
+}
+
+.reward-chest {
+  position: absolute;
+  left: calc(100% + var(--node-to-chest-gap, 14px) + (var(--chest-size, 70px) / 2));
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--chest-size, 70px);
+  height: var(--chest-size, 70px);
+  border-radius: calc(var(--chest-size, 70px) * 0.285);
+  border: 3px solid rgba(148, 163, 184, 0.6);
+  background: linear-gradient(180deg, rgba(51, 65, 85, 0.95), rgba(30, 41, 59, 0.95));
+  color: #e2e8f0;
+  font-size: calc(var(--chest-size, 70px) * 0.38);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  appearance: none;
+  z-index: 4;
+  cursor: default;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, filter 0.2s ease;
+  box-shadow: 0 6px 14px rgba(2, 6, 23, 0.45);
+}
+
+.reward-chest.claimable {
+  border-color: #fcd34d;
+  background: linear-gradient(180deg, #f59e0b, #b45309);
+  color: #fff7ed;
+  cursor: pointer;
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.55), 0 8px 16px rgba(0, 0, 0, 0.45);
+  animation: chestPulse 1.5s ease-in-out infinite;
+}
+
+.reward-chest.claimable:hover {
+  transform: translate(-50%, -50%) scale(1.04);
+  filter: brightness(1.08);
+}
+
+.reward-chest.locked {
+  opacity: 0.78;
+}
+
+.reward-chest.claimed {
+  border-color: #10b981;
+  background: linear-gradient(180deg, #166534, #14532d);
+  color: #d1fae5;
 }
 
 /* Tooltip */
@@ -916,8 +970,8 @@ body {
 }
 
 .level-node {
-  width: 70px;
-  height: 70px;
+  width: var(--node-size, 70px);
+  height: var(--node-size, 70px);
   border-radius: 50%;
   background: var(--glass);
   border: 3px solid #4b5563;
@@ -932,8 +986,8 @@ body {
 }
 
 .boss-node {
-  width: 90px;
-  height: 90px;
+  width: var(--boss-node-size, 90px);
+  height: var(--boss-node-size, 90px);
   border-color: var(--danger);
   box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
 }
@@ -953,8 +1007,8 @@ body {
   position: absolute;
   height: 4px;
   background: #4b5563;
-  right: -80px;
-  width: 80px;
+  right: calc(var(--path-line-length, 96px) * -1);
+  width: var(--path-line-length, 96px);
   top: 50%;
   transform: translateY(-50%);
   z-index: -1;
@@ -982,6 +1036,18 @@ body {
   background: #1f2937;
   color: #6b7280;
   cursor: not-allowed;
+}
+
+@keyframes chestPulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 16px rgba(251, 191, 36, 0.45), 0 8px 16px rgba(0, 0, 0, 0.45);
+  }
+
+  50% {
+    box-shadow: 0 0 28px rgba(251, 191, 36, 0.75), 0 10px 18px rgba(0, 0, 0, 0.5);
+  }
 }
 
 /* --- KINGDOM SLOT --- */
@@ -1620,10 +1686,13 @@ body {
 }
 
 @keyframes castleBonusPulse {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scale(1);
     box-shadow: 0 0 8px rgba(245, 158, 11, 0.45);
   }
+
   50% {
     transform: scale(1.08);
     box-shadow: 0 0 16px rgba(245, 158, 11, 0.72);
@@ -1719,6 +1788,12 @@ body {
 }
 
 @media (max-width: 980px) {
+  .map-nodes {
+    --node-row-gap: 120px;
+    --path-line-length: 120px;
+    --node-to-chest-gap: 25px;
+  }
+
   .castle-topbar {
     grid-template-columns: auto 1fr auto;
     gap: 10px;

@@ -37,6 +37,8 @@ flowchart TB
         Goal{Node goal reached?}
         KeepNode[Stay on current node]
         NodeClear[Clear node: +1 crown]
+        ChestUnlock[Unlock chest between cleared node and next node]
+        ChestClaim[Claim chest: +coins +crown]
         BossCheck{Boss node and region cleared?}
         RegionUnlock[Unlock next region + next castle]
         PostPopup[Show clear popup]
@@ -44,7 +46,7 @@ flowchart TB
 
     NodeTap --> SEnter --> Spin --> Eval --> Goal
     Goal -->|No| KeepNode --> SEnter
-    Goal -->|Yes| NodeClear --> BossCheck
+    Goal -->|Yes| NodeClear --> ChestUnlock --> ChestClaim --> BossCheck
     BossCheck -->|Yes| RegionUnlock --> PostPopup --> Home
     BossCheck -->|No| PostPopup --> Home
 
@@ -89,3 +91,4 @@ flowchart TB
 - Region order: `Home -> Forest -> Desert -> Snow -> Volcano`.
 - Region/castle unlock rule: clear boss of region `i` to unlock region `i+1` and castle `i+1`.
 - Building bonus rule: completion bonus is manual claim (one-time per region castle).
+- Reward chest rule: mỗi đường nối `node i -> node i+1` có một chest, unlock khi clear `node i`, claim 1 lần.

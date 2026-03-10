@@ -1,5 +1,8 @@
 const CASTLE_SLOT_MAX_LEVEL = 3;
 const CASTLE_COMPLETION_BONUS = { coins: 25000, crowns: 8 };
+const KINGDOM_CHEST_BASE_COINS = 1800;
+const KINGDOM_CHEST_REGION_COINS_STEP = 700;
+const KINGDOM_CHEST_NODE_COINS_STEP = 450;
 const CASTLE_SLOT_BLUEPRINT = [
     { key: 'keep', name: 'Keep', baseCost: 4, visuals: ['🪨', '🧱', '🏯', '🏰'] },
     { key: 'gate', name: 'Gate', baseCost: 5, visuals: ['🚧', '🚪', '🛡️', '🚪✨'] },
@@ -19,6 +22,26 @@ function createRegionCastle() {
     };
 }
 
+function createRegionChests(regionIdx, nodeCount) {
+    const chestCount = Math.max(0, nodeCount - 1);
+    return Array.from({ length: chestCount }, (_, idx) => {
+        const fromNode = idx + 1;
+        const coins = KINGDOM_CHEST_BASE_COINS
+            + (regionIdx * KINGDOM_CHEST_REGION_COINS_STEP)
+            + (fromNode * KINGDOM_CHEST_NODE_COINS_STEP);
+
+        return {
+            fromNode,
+            toNode: fromNode + 1,
+            claimed: false,
+            reward: {
+                coins,
+                crowns: 1
+            }
+        };
+    });
+}
+
 function createInitialRegions() {
     return [
         { id: 'home', name: '🏠 Home', icon: '🏠', unlocked: true, nodes: 3 },
@@ -33,7 +56,8 @@ function createInitialRegions() {
             ...region,
             clearedNodes: 0,
             nodeProgress: 0,
-            castle
+            castle,
+            chests: createRegionChests(idx, region.nodes)
         };
     });
 }
@@ -504,6 +528,82 @@ function getNodeGoal(regionIdx, nodeNum) {
     return 3 + nodeNum + (regionIdx * 2);
 }
 
+function getChestStatus(region, chestIdx) {
+    const chest = region?.chests?.[chestIdx];
+    if (!chest) return 'missing';
+    if (chest.claimed) return 'claimed';
+    return region.clearedNodes >= chest.fromNode ? 'claimable' : 'locked';
+}
+
+function getChestTooltip(chest, status) {
+    if (!chest) return '';
+    if (status === 'claimed') return 'Chest claimed';
+    if (status === 'locked') return `Clear node ${chest.fromNode} to unlock chest`;
+    return `Claim: 🪙 ${chest.reward.coins.toLocaleString()} · 👑 ${chest.reward.crowns}`;
+}
+
+function renderKingdomMapNodes(curRegion, regionIdx, theme) {
+    const activeNode = getRegionCurrentNode(curRegion);
+    const regionCleared = isRegionCleared(curRegion);
+    let mapHTML = '';
+    let nodesInRow = 0;
+
+    for (let i = 1; i <= curRegion.nodes; i++) {
+        let status = 'locked';
+        let onclick = '';
+        const goal = getNodeGoal(regionIdx, i);
+        const isBoss = (i === curRegion.nodes);
+
+        if (i <= curRegion.clearedNodes) {
+            status = 'unlocked';
+            onclick = "switchScreen('kingdom-slot')";
+        } else if (!regionCleared && i === activeNode) {
+            status = 'current';
+            onclick = "switchScreen('kingdom-slot')";
+        }
+
+        let nodeStyle = '';
+        if (isBoss) nodeStyle = `border-color: ${theme.bossBorder}; box-shadow: 0 0 25px rgba(239,68,68,0.7);`;
+        else if (status === 'unlocked') nodeStyle = `border-color: ${theme.border}; box-shadow: 0 0 20px ${theme.glow}; background: ${theme.border}22;`;
+        else if (status === 'current') nodeStyle = `border-color: ${theme.border}; box-shadow: 0 0 35px ${theme.glow}; background: radial-gradient(circle, ${theme.border}88, ${theme.border}33);`;
+
+        const extraClass = isBoss ? 'boss-node' : '';
+        const innerText = isBoss ? '☠️' : i;
+        const hasPathToNext = (i !== curRegion.nodes && nodesInRow < 4);
+        const pathLine = hasPathToNext ? '<div class="path-line"></div>' : '';
+        const tooltip = i <= curRegion.clearedNodes ? 'Cleared' : `Goal: ${goal} ⚔️`;
+
+        let chestHtml = '';
+        const chest = curRegion.chests?.[i - 1];
+        if (hasPathToNext && chest) {
+            const chestIdx = i - 1;
+            const chestStatus = getChestStatus(curRegion, chestIdx);
+            const chestTooltip = getChestTooltip(chest, chestStatus);
+            const chestAction = chestStatus === 'claimable' ? `onclick="claimChest(${chestIdx})"` : '';
+            const chestIcon = chestStatus === 'claimed' ? '✅' : (chestStatus === 'claimable' ? '🎁' : '🧰');
+            chestHtml = `
+                <button type="button" class="reward-chest ${chestStatus}" title="${chestTooltip}" aria-label="${chestTooltip}" ${chestAction}>${chestIcon}</button>
+            `;
+        }
+
+        if (nodesInRow === 0) mapHTML += '<div class="node-row">';
+        mapHTML += `
+            <div class="node-wrapper">
+                <div class="level-node ${status} ${extraClass} tooltip" data-tip="${tooltip}" style="${nodeStyle}" ${onclick ? 'onclick="' + onclick + '"' : ''}>${innerText}${pathLine}</div>
+                ${chestHtml}
+            </div>
+        `;
+
+        nodesInRow++;
+        if (nodesInRow === 5 || i === curRegion.nodes) {
+            mapHTML += '</div>';
+            nodesInRow = 0;
+        }
+    }
+
+    return mapHTML;
+}
+
 // DOM Elements
 const els = {
     coinAmount: document.getElementById('coin-amount'),
@@ -594,45 +694,10 @@ function renderScreen() {
         } else {
             // --- KINGDOM HOME (in-place map) ---
             const curRegion = state.regions[state.currentRegionIdx];
-            const activeNode = getRegionCurrentNode(curRegion);
-            const regionCleared = isRegionCleared(curRegion);
             const theme = KINGDOM_MAP_THEMES[curRegion.id] || KINGDOM_MAP_THEMES.home;
-
             const nextRegion = state.currentRegionIdx < state.regions.length - 1 ? state.regions[state.currentRegionIdx + 1] : null;
-            const nextArrow = nextRegion && nextRegion.unlocked
-                ? `<button class="map-nav-arrow" onclick="travelToRegion(${state.currentRegionIdx + 1})">&#9654;</button>`
-                : `<button class="map-nav-arrow invisible">&#9654;</button>`;
             const prevRegion = state.currentRegionIdx > 0 ? state.regions[state.currentRegionIdx - 1] : null;
-            const prevArrow = prevRegion && prevRegion.unlocked
-                ? `<button class="map-nav-arrow" onclick="travelToRegion(${state.currentRegionIdx - 1})">&#9664;</button>`
-                : null;
-
-            let mapHTML = '';
-            let nodesInRow = 0;
-            for (let i = 1; i <= curRegion.nodes; i++) {
-                let status = 'locked', onclick = '';
-                let goal = getNodeGoal(state.currentRegionIdx, i);
-                let isBoss = (i === curRegion.nodes);
-                if (i <= curRegion.clearedNodes) {
-                    status = 'unlocked';
-                    onclick = "switchScreen('kingdom-slot')";
-                } else if (!regionCleared && i === activeNode) {
-                    status = 'current';
-                    onclick = "switchScreen('kingdom-slot')";
-                }
-                let nodeStyle = '';
-                if (isBoss) nodeStyle = `border-color: ${theme.bossBorder}; box-shadow: 0 0 25px rgba(239,68,68,0.7);`;
-                else if (status === 'unlocked') nodeStyle = `border-color: ${theme.border}; box-shadow: 0 0 20px ${theme.glow}; background: ${theme.border}22;`;
-                else if (status === 'current') nodeStyle = `border-color: ${theme.border}; box-shadow: 0 0 35px ${theme.glow}; background: radial-gradient(circle, ${theme.border}88, ${theme.border}33);`;
-                let extraClass = isBoss ? 'boss-node' : '';
-                let innerText = isBoss ? '☠️' : i;
-                let pathLine = (i !== curRegion.nodes && nodesInRow < 4) ? '<div class="path-line"></div>' : '';
-                if (nodesInRow === 0) mapHTML += '<div class="node-row">';
-                const tooltip = i <= curRegion.clearedNodes ? 'Cleared' : `Goal: ${goal} ⚔️`;
-                mapHTML += `<div class="node-wrapper tooltip" data-tip="${tooltip}"><div class="level-node ${status} ${extraClass}" style="${nodeStyle}" ${onclick ? 'onclick="' + onclick + '"' : ''}>${innerText}${pathLine}</div></div>`;
-                nodesInRow++;
-                if (nodesInRow === 5 || i === curRegion.nodes) { mapHTML += '</div>'; nodesInRow = 0; }
-            }
+            const mapHTML = renderKingdomMapNodes(curRegion, state.currentRegionIdx, theme);
 
             html = `
                 <div class="screen active map-screen" style="background-color: ${theme.bg};">
@@ -678,64 +743,14 @@ function renderScreen() {
         `;
     } else if (state.screen === 'kingdom-map') {
         const curRegion = state.regions[state.currentRegionIdx];
-        const activeNode = getRegionCurrentNode(curRegion);
-        const regionCleared = isRegionCleared(curRegion);
         const theme = KINGDOM_MAP_THEMES[curRegion.id] || KINGDOM_MAP_THEMES.home;
 
         // Arrow nav: can go to adjacent unlocked regions
-        const prevRegion = state.currentRegionIdx > 0 ? state.regions[state.currentRegionIdx - 1] : null;
         const nextRegion = state.currentRegionIdx < state.regions.length - 1 ? state.regions[state.currentRegionIdx + 1] : null;
-        const prevArrow = prevRegion && prevRegion.unlocked
-            ? `<button class="map-nav-arrow" onclick="travelToRegion(${state.currentRegionIdx - 1})">&#9664;</button>`
-            : `<button class="map-nav-arrow invisible">&#9664;</button>`;
         const nextArrow = nextRegion && nextRegion.unlocked
             ? `<button class="map-nav-arrow" onclick="travelToRegion(${state.currentRegionIdx + 1})">&#9654;</button>`
             : `<button class="map-nav-arrow invisible">&#9654;</button>`;
-
-        let mapHTML = '';
-        let nodesInRow = 0;
-
-        for (let i = 1; i <= curRegion.nodes; i++) {
-            let status = 'locked';
-            let onclick = '';
-            let goal = getNodeGoal(state.currentRegionIdx, i);
-            let isBoss = (i === curRegion.nodes);
-
-            if (i <= curRegion.clearedNodes) {
-                status = 'unlocked';
-                onclick = "switchScreen('kingdom-slot')";
-            } else if (!regionCleared && i === activeNode) {
-                status = 'current';
-                onclick = "switchScreen('kingdom-slot')";
-            }
-
-            // Per-region inline style for border/glow
-            let nodeStyle = '';
-            if (isBoss) {
-                nodeStyle = `border-color: ${theme.bossBorder}; box-shadow: 0 0 25px rgba(239,68,68,0.7);`;
-            } else if (status === 'unlocked') {
-                nodeStyle = `border-color: ${theme.border}; box-shadow: 0 0 20px ${theme.glow}; background: ${theme.border}22;`;
-            } else if (status === 'current') {
-                nodeStyle = `border-color: ${theme.border}; box-shadow: 0 0 35px ${theme.glow}; background: radial-gradient(circle, ${theme.border}88, ${theme.border}33);`;
-            }
-
-            let extraClass = isBoss ? 'boss-node' : '';
-            let innerText = isBoss ? '☠️' : i;
-            let pathLine = (i !== curRegion.nodes && nodesInRow < 4) ? '<div class="path-line"></div>' : '';
-
-            if (nodesInRow === 0) mapHTML += '<div class="node-row">';
-
-            const tooltip = i <= curRegion.clearedNodes ? 'Cleared' : `Goal: ${goal} ⚔️`;
-            mapHTML += `<div class="node-wrapper tooltip" data-tip="${tooltip}">
-                            <div class="level-node ${status} ${extraClass}" style="${nodeStyle}" ${onclick ? 'onclick="' + onclick + '"' : ''}>${innerText}${pathLine}</div>
-                        </div>`;
-
-            nodesInRow++;
-            if (nodesInRow === 5 || i === curRegion.nodes) {
-                mapHTML += '</div>';
-                nodesInRow = 0;
-            }
-        }
+        const mapHTML = renderKingdomMapNodes(curRegion, state.currentRegionIdx, theme);
 
         html = `
             <div class="screen active map-screen" style="background-color: ${theme.bg};">
@@ -1172,6 +1187,33 @@ function changeBet(amt) {
     if (nextBet === state.casinoBet) return;
     state.casinoBet = nextBet;
     renderScreen();
+}
+
+function claimChest(chestIdx) {
+    const curRegion = state.regions[state.currentRegionIdx];
+    const chest = curRegion?.chests?.[chestIdx];
+    if (!chest) return;
+
+    const chestStatus = getChestStatus(curRegion, chestIdx);
+    if (chestStatus === 'locked') {
+        showToast(`Chest locked. Clear node ${chest.fromNode} first.`);
+        return;
+    }
+    if (chestStatus === 'claimed') {
+        showToast('Chest already claimed.');
+        return;
+    }
+
+    chest.claimed = true;
+    state.coins += chest.reward.coins;
+    state.crowns += chest.reward.crowns;
+
+    renderTopBar();
+    renderScreen();
+
+    spawnFloatingReward(`🪙 +${chest.reward.coins.toLocaleString()}`, window.innerWidth / 2 - 70, window.innerHeight / 2);
+    setTimeout(() => spawnFloatingReward(`👑 +${chest.reward.crowns}`, window.innerWidth / 2 + 70, window.innerHeight / 2 + 20), 120);
+    showToast(`🎁 Chest opened: +${chest.reward.coins.toLocaleString()} coins, +${chest.reward.crowns} crown`);
 }
 
 function showPopup(title, msg, onContinueStr = "closePopup()", isBoss = false) {
