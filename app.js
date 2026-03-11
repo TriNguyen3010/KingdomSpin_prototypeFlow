@@ -3,6 +3,12 @@ const CASTLE_COMPLETION_BONUS = { coins: 25000, crowns: 8 };
 const KINGDOM_CHEST_BASE_COINS = 1800;
 const KINGDOM_CHEST_REGION_COINS_STEP = 700;
 const KINGDOM_CHEST_NODE_COINS_STEP = 450;
+const MISSION_STATUS = {
+    LOCKED: 'locked',
+    ACTIVE: 'active',
+    COMPLETED: 'completed',
+    CLAIMED: 'claimed'
+};
 const CASTLE_SLOT_BLUEPRINT = [
     { key: 'keep', name: 'Keep', baseCost: 4, visuals: ['🪨', '🧱', '🏯', '🏰'] },
     { key: 'gate', name: 'Gate', baseCost: 5, visuals: ['🚧', '🚪', '🛡️', '🚪✨'] },
@@ -55,9 +61,9 @@ function createInitialRegions() {
         return {
             ...region,
             clearedNodes: 0,
-            nodeProgress: 0,
             castle,
-            chests: createRegionChests(idx, region.nodes)
+            chests: createRegionChests(idx, region.nodes),
+            nodeMissions: {}
         };
     });
 }
@@ -517,15 +523,265 @@ function resolveCasinoLevelUps() {
     return { levelsGained, totalBonusCoins, unlockedMachines };
 }
 
-// Helper to get current node's goal
-function getNodeGoal(regionIdx, nodeNum) {
+function getMissionCountByRegion(regionIdx) {
+    if (regionIdx <= 0) return 1;
+    if (regionIdx === 1) return 2;
+    return 3;
+}
+
+function getDemoMissionTargets(regionIdx, nodeNum, isBoss = false) {
+    const regionScale = Math.min(regionIdx, 2);
+    const nodeScale = Math.max(0, nodeNum - 1);
+
+    return {
+        power: Math.min(8, 4 + regionScale + (isBoss ? 1 : 0) + (nodeScale >= 2 ? 1 : 0)),
+        spins: Math.min(4, 2 + (regionIdx >= 2 ? 1 : 0) + (isBoss ? 1 : 0)),
+        coins: Math.min(1800, 600 + (regionIdx * 250) + (nodeScale * 150) + (isBoss ? 200 : 0))
+    };
+}
+
+function getMissionReward(regionIdx, type, isBoss = false) {
+    const rewardByType = {
+        power_accumulate: { coins: 700, crowns: 0 },
+        spin_count: { coins: 600, crowns: 0 },
+        coin_win: { coins: 950, crowns: 1 }
+    };
+
+    const baseReward = rewardByType[type] || { coins: 500, crowns: 0 };
+    return {
+        coins: baseReward.coins + (regionIdx * 160) + (isBoss ? 120 : 0),
+        crowns: baseReward.crowns
+    };
+}
+
+function createNodeMissions(regionIdx, nodeNum) {
     const region = state.regions[regionIdx];
-    if (nodeNum === region.nodes) {
-        // Boss Node
-        return 8 + (regionIdx * 2);
+    if (!region) return [];
+
+    const safeNode = Math.max(1, Math.min(nodeNum, region.nodes));
+    const isBoss = safeNode === region.nodes;
+    const missionCount = getMissionCountByRegion(regionIdx);
+    const targets = getDemoMissionTargets(regionIdx, safeNode, isBoss);
+    const missionDefs = [
+        {
+            type: 'power_accumulate',
+            title: `Gain ${targets.power} Power`,
+            target: targets.power
+        },
+        {
+            type: 'spin_count',
+            title: `Spin ${targets.spins} Times`,
+            target: targets.spins
+        },
+        {
+            type: 'coin_win',
+            title: `Win ${targets.coins.toLocaleString()} Coins`,
+            target: targets.coins
+        }
+    ];
+
+    return missionDefs.slice(0, missionCount).map((mission, idx) => ({
+        id: `r${regionIdx + 1}n${safeNode}_${mission.type}_${idx + 1}`,
+        ...mission,
+        progress: 0,
+        status: MISSION_STATUS.LOCKED,
+        reward: getMissionReward(regionIdx, mission.type, isBoss)
+    }));
+}
+
+function syncNodeMissionStatuses(regionIdx, nodeNum) {
+    const region = state.regions[regionIdx];
+    if (!region) return [];
+
+    const missionKey = String(nodeNum);
+    const missions = region.nodeMissions?.[missionKey];
+    if (!Array.isArray(missions)) return [];
+
+    const activeNode = getRegionCurrentNode(region);
+    const isCurrentNode = !isRegionCleared(region) && activeNode === nodeNum;
+
+    missions.forEach((mission) => {
+        const target = Math.max(1, Number(mission.target) || 1);
+        const progress = Math.max(0, Number(mission.progress) || 0);
+        mission.target = target;
+        mission.progress = Math.min(progress, target);
+
+        if (mission.status === MISSION_STATUS.CLAIMED) return;
+        if (mission.progress >= mission.target) {
+            mission.status = MISSION_STATUS.COMPLETED;
+            return;
+        }
+
+        mission.status = isCurrentNode ? MISSION_STATUS.ACTIVE : MISSION_STATUS.LOCKED;
+    });
+
+    return missions;
+}
+
+function ensureNodeMissions(regionIdx, nodeNum) {
+    const region = state.regions[regionIdx];
+    if (!region) return [];
+
+    const safeNode = Math.max(1, Math.min(nodeNum, region.nodes));
+    if (!region.nodeMissions || typeof region.nodeMissions !== 'object') {
+        region.nodeMissions = {};
     }
-    // Normal Node
-    return 3 + nodeNum + (regionIdx * 2);
+
+    const missionKey = String(safeNode);
+    if (!Array.isArray(region.nodeMissions[missionKey])) {
+        region.nodeMissions[missionKey] = createNodeMissions(regionIdx, safeNode);
+    }
+
+    return syncNodeMissionStatuses(regionIdx, safeNode);
+}
+
+function applyMissionProgress(regionIdx, nodeNum, spinResult = {}) {
+    const region = state.regions[regionIdx];
+    if (!region) return [];
+
+    const safeNode = Math.max(1, Math.min(nodeNum, region.nodes));
+    if (isRegionCleared(region) || getRegionCurrentNode(region) !== safeNode) return [];
+
+    const missions = ensureNodeMissions(regionIdx, safeNode);
+    if (missions.length === 0) return [];
+
+    const wonPower = Math.max(0, Number(spinResult.wonPower) || 0);
+    const wonCoins = Math.max(0, Number(spinResult.wonCoins) || 0);
+    const spinCount = Math.max(0, Number(spinResult.spinCount) || 0);
+    const newlyCompleted = [];
+
+    missions.forEach((mission) => {
+        if (mission.status === MISSION_STATUS.CLAIMED) return;
+
+        const wasCompleted = mission.progress >= mission.target;
+        if (mission.type === 'power_accumulate') {
+            mission.progress += wonPower;
+        } else if (mission.type === 'spin_count') {
+            mission.progress += spinCount;
+        } else if (mission.type === 'coin_win') {
+            mission.progress += wonCoins;
+        }
+
+        mission.progress = Math.min(mission.target, mission.progress);
+        if (!wasCompleted && mission.progress >= mission.target) {
+            mission.status = MISSION_STATUS.COMPLETED;
+            newlyCompleted.push(mission);
+        }
+    });
+
+    syncNodeMissionStatuses(regionIdx, safeNode);
+    return newlyCompleted;
+}
+
+function getNodeMissionStats(regionIdx, nodeNum) {
+    const missions = ensureNodeMissions(regionIdx, nodeNum);
+    const completedCount = missions.filter((mission) => (
+        mission.status === MISSION_STATUS.COMPLETED || mission.status === MISSION_STATUS.CLAIMED
+    )).length;
+
+    return {
+        missions,
+        completedCount,
+        total: missions.length
+    };
+}
+
+function isCurrentNodeMissionCleared(regionIdx, nodeNum) {
+    const stats = getNodeMissionStats(regionIdx, nodeNum);
+    return stats.total > 0 && stats.completedCount >= stats.total;
+}
+
+function claimCompletedMissionsForNode(regionIdx, nodeNum) {
+    const missions = ensureNodeMissions(regionIdx, nodeNum);
+    let rewardCoins = 0;
+    let rewardCrowns = 0;
+    let claimedCount = 0;
+
+    missions.forEach((mission) => {
+        if (mission.status !== MISSION_STATUS.COMPLETED) return;
+        mission.status = MISSION_STATUS.CLAIMED;
+        rewardCoins += Math.max(0, Number(mission.reward?.coins) || 0);
+        rewardCrowns += Math.max(0, Number(mission.reward?.crowns) || 0);
+        claimedCount += 1;
+    });
+
+    return { rewardCoins, rewardCrowns, claimedCount };
+}
+
+function getMissionTypeIcon(type) {
+    if (type === 'power_accumulate') return '⚔️';
+    if (type === 'spin_count') return '🎰';
+    if (type === 'coin_win') return '🪙';
+    return '🎯';
+}
+
+function getMissionStatusLabel(status) {
+    if (status === MISSION_STATUS.CLAIMED) return 'Claimed';
+    if (status === MISSION_STATUS.COMPLETED) return 'Completed';
+    if (status === MISSION_STATUS.ACTIVE) return 'Active';
+    return 'Locked';
+}
+
+function formatMissionReward(reward) {
+    const coinReward = Math.max(0, Number(reward?.coins) || 0);
+    const crownReward = Math.max(0, Number(reward?.crowns) || 0);
+    const parts = [];
+    if (coinReward > 0) parts.push(`🪙 ${coinReward.toLocaleString()}`);
+    if (crownReward > 0) parts.push(`👑 ${crownReward}`);
+    return parts.join(' · ') || 'No reward';
+}
+
+function renderNodeMissionBoard(regionIdx, nodeNum) {
+    const missions = ensureNodeMissions(regionIdx, nodeNum);
+    if (missions.length === 0) return '';
+
+    const missionCount = getMissionCountByRegion(regionIdx);
+    const missionListHtml = missions.map((mission) => {
+        const status = mission.status || MISSION_STATUS.LOCKED;
+        const pct = mission.target > 0 ? Math.round((mission.progress / mission.target) * 100) : 0;
+        const progressPct = Math.min(100, Math.max(0, pct));
+        const statusLabel = getMissionStatusLabel(status);
+        const canClaim = status === MISSION_STATUS.COMPLETED;
+        const claimAction = canClaim && !state.kingdomSpinBusy ? `onclick="claimNodeMission('${mission.id}')"` : '';
+        const claimDisabled = canClaim && state.kingdomSpinBusy ? 'disabled' : '';
+        const rewardLabel = formatMissionReward(mission.reward);
+
+        let actionHTML = '';
+        if (canClaim) {
+            actionHTML = `<button type="button" class="node-mission-claim-btn" ${claimAction} ${claimDisabled}>Claim</button>`;
+        } else if (status === MISSION_STATUS.CLAIMED) {
+            actionHTML = `<div class="node-mission-chip ${status}">${statusLabel}</div>`;
+        }
+
+        return `
+            <div class="node-mission-card ${status}">
+                <div class="node-mission-head">
+                    <div class="node-mission-title">${getMissionTypeIcon(mission.type)} ${mission.title}</div>
+                    <div class="node-mission-status ${status}">${statusLabel}</div>
+                </div>
+                <div class="node-mission-progress-row">
+                    <div class="node-mission-progress-track">
+                        <div class="node-mission-progress-fill" style="width:${progressPct}%"></div>
+                    </div>
+                    <div class="node-mission-progress-text">${mission.progress}/${mission.target}</div>
+                </div>
+                <div class="node-mission-footer">
+                    <div class="node-mission-reward">${rewardLabel}</div>
+                    ${actionHTML}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div class="node-mission-board">
+            <div class="node-mission-board-head">
+                <span>🎯 Node Missions</span>
+                <span>${missionCount} mission${missionCount > 1 ? 's' : ''} · demo easy</span>
+            </div>
+            <div class="node-mission-list">${missionListHtml}</div>
+        </div>
+    `;
 }
 
 function getChestStatus(region, chestIdx) {
@@ -551,12 +807,11 @@ function renderKingdomMapNodes(curRegion, regionIdx, theme) {
     for (let i = 1; i <= curRegion.nodes; i++) {
         let status = 'locked';
         let onclick = '';
-        const goal = getNodeGoal(regionIdx, i);
         const isBoss = (i === curRegion.nodes);
 
         if (i <= curRegion.clearedNodes) {
             status = 'unlocked';
-            onclick = "switchScreen('kingdom-slot')";
+            // Không gán onclick, không cho màn hình slot khi đã cleared
         } else if (!regionCleared && i === activeNode) {
             status = 'current';
             onclick = "switchScreen('kingdom-slot')";
@@ -571,7 +826,10 @@ function renderKingdomMapNodes(curRegion, regionIdx, theme) {
         const innerText = isBoss ? '☠️' : i;
         const hasPathToNext = (i !== curRegion.nodes && nodesInRow < 4);
         const pathLine = hasPathToNext ? '<div class="path-line"></div>' : '';
-        const tooltip = i <= curRegion.clearedNodes ? 'Cleared' : `Goal: ${goal} ⚔️`;
+        const missionCount = getMissionCountByRegion(regionIdx);
+        const tooltip = i <= curRegion.clearedNodes
+            ? 'Cleared'
+            : `${isBoss ? 'Boss node · ' : ''}${missionCount} mission${missionCount > 1 ? 's' : ''}`;
 
         let chestHtml = '';
         const chest = curRegion.chests?.[i - 1];
@@ -769,14 +1027,13 @@ function renderScreen() {
         const activeNode = getRegionCurrentNode(curRegion);
         const regionCleared = isRegionCleared(curRegion);
         const theme = KINGDOM_SLOT_THEMES[curRegion.id] || KINGDOM_SLOT_THEMES.home;
-
-        const curGoal = getNodeGoal(state.currentRegionIdx, activeNode);
-        const pct = regionCleared ? 100 : Math.min(100, (curRegion.nodeProgress / curGoal) * 100);
+        const missionBoardHTML = renderNodeMissionBoard(state.currentRegionIdx, activeNode);
+        const missionStats = getNodeMissionStats(state.currentRegionIdx, activeNode);
         const isBoss = (activeNode === curRegion.nodes);
         const headerColor = isBoss ? '#ef4444' : theme.accent;
         const headerText = regionCleared
             ? 'REGION CLEARED'
-            : `${isBoss ? '☠️ BOSS · ' : ''}${curRegion.nodeProgress} / ${curGoal} ⚔️`;
+            : `${isBoss ? '☠️ BOSS · ' : ''}${missionStats.completedCount} / ${missionStats.total} MISSIONS`;
 
         html = `
             <div class="screen active slot-screen">
@@ -785,29 +1042,28 @@ function renderScreen() {
                     <div class="slot-region-tag" style="color: ${theme.accent};">${curRegion.name}</div>
                     <div class="slot-header-content" style="color: ${headerColor};">${headerText}</div>
                 </div>
-                <div class="slot-reels-container">
-                    <div class="kingdom-slot-extras">
-                        <div class="crown-progress-container">
-                            <div class="crown-progress-bar ${isBoss ? 'boss-bar' : ''}" style="width: ${pct}%; background: linear-gradient(90deg, ${theme.accent}aa, ${theme.accent});" id="k-crown-bar"></div>
-                            <div class="crown-progress-text" id="k-crown-txt">${regionCleared ? 'Completed' : `${curRegion.nodeProgress} / ${curGoal} Power`}</div>
+                <div class="slot-reels-container kingdom-slot-layout">
+                    <div class="kingdom-slot-main">
+                        <div class="kingdom-slot-machine" id="kingdom-slot-machine" style="--slot-accent: ${theme.reelBorder}; --slot-glow: ${theme.reelGlow};">
+                            <div class="k-reel"></div>
+                            <div class="k-reel"></div>
+                            <div class="k-reel"></div>
+                            <div class="k-reel"></div>
+                            <div class="k-reel"></div>
                         </div>
+
+                        <div class="bet-controls">
+                            <button onclick="changeBet(-500)">-</button>
+                            <div class="bet-amount">500</div>
+                            <button onclick="changeBet(500)">+</button>
+                        </div>
+
+                        <button id="kingdom-spin-btn" class="spin-btn" style="background: linear-gradient(to bottom, ${theme.accent}, ${theme.accent}aa); border-color: ${theme.accent}; box-shadow: 0 10px 0 ${theme.accent}55, 0 15px 20px rgba(0,0,0,0.6);" ${regionCleared ? 'disabled' : 'onclick="spinKingdomSlot()"'} ${state.kingdomSpinBusy ? 'disabled' : ''}>${regionCleared ? 'CLEARED' : 'SPIN'}</button>
                     </div>
 
-                    <div class="kingdom-slot-machine" id="kingdom-slot-machine" style="--slot-accent: ${theme.reelBorder}; --slot-glow: ${theme.reelGlow};">
-                        <div class="k-reel"></div>
-                        <div class="k-reel"></div>
-                        <div class="k-reel"></div>
-                        <div class="k-reel"></div>
-                        <div class="k-reel"></div>
-                    </div>
-
-                    <div class="bet-controls">
-                        <button onclick="changeBet(-500)">-</button>
-                        <div class="bet-amount">500</div>
-                        <button onclick="changeBet(500)">+</button>
-                    </div>
-
-                    <button id="kingdom-spin-btn" class="spin-btn" style="background: linear-gradient(to bottom, ${theme.accent}, ${theme.accent}aa); border-color: ${theme.accent}; box-shadow: 0 10px 0 ${theme.accent}55, 0 15px 20px rgba(0,0,0,0.6);" ${regionCleared ? 'disabled' : 'onclick="spinKingdomSlot()"'} ${state.kingdomSpinBusy ? 'disabled' : ''}>${regionCleared ? 'CLEARED' : 'SPIN'}</button>
+                    <aside class="kingdom-slot-side">
+                        ${missionBoardHTML}
+                    </aside>
                 </div>
             </div>
         `;
@@ -1189,6 +1445,52 @@ function changeBet(amt) {
     renderScreen();
 }
 
+function claimNodeMission(missionId) {
+    const curRegion = state.regions[state.currentRegionIdx];
+    if (!curRegion) return;
+    if (state.kingdomSpinBusy) {
+        showToast('Wait for spin to finish.');
+        return;
+    }
+
+    const nodeNum = getRegionCurrentNode(curRegion);
+    const missions = ensureNodeMissions(state.currentRegionIdx, nodeNum);
+    const mission = missions.find((item) => item.id === missionId);
+    if (!mission) return;
+
+    if (mission.status === MISSION_STATUS.CLAIMED) {
+        showToast('Mission already claimed.');
+        return;
+    }
+    if (mission.status !== MISSION_STATUS.COMPLETED) {
+        showToast('Mission is not complete yet.');
+        return;
+    }
+
+    mission.status = MISSION_STATUS.CLAIMED;
+    const rewardCoins = Math.max(0, Number(mission.reward?.coins) || 0);
+    const rewardCrowns = Math.max(0, Number(mission.reward?.crowns) || 0);
+    state.coins += rewardCoins;
+    state.crowns += rewardCrowns;
+
+    renderTopBar();
+    renderScreen();
+
+    if (rewardCoins > 0) {
+        spawnFloatingReward(`🪙 +${rewardCoins.toLocaleString()}`, window.innerWidth / 2 - 70, window.innerHeight / 2);
+    }
+    if (rewardCrowns > 0) {
+        setTimeout(() => {
+            spawnFloatingReward(`👑 +${rewardCrowns}`, window.innerWidth / 2 + 70, window.innerHeight / 2 + 20);
+        }, 120);
+    }
+
+    const rewardParts = [];
+    if (rewardCoins > 0) rewardParts.push(`+${rewardCoins.toLocaleString()} coins`);
+    if (rewardCrowns > 0) rewardParts.push(`+${rewardCrowns} crown${rewardCrowns > 1 ? 's' : ''}`);
+    showToast(`🎯 Mission claimed${rewardParts.length > 0 ? ` · ${rewardParts.join(', ')}` : ''}`);
+}
+
 function claimChest(chestIdx) {
     const curRegion = state.regions[state.currentRegionIdx];
     const chest = curRegion?.chests?.[chestIdx];
@@ -1356,17 +1658,37 @@ function spinKingdomSlot() {
     state.kingdomSlotEngine.spin().then((symbols) => {
         const { wonPower, wonCoins } = evaluateKingdomSpinSymbols(symbols);
         const activeNode = getRegionCurrentNode(curRegion);
-        const curGoal = getNodeGoal(state.currentRegionIdx, activeNode);
         const isBoss = (activeNode === curRegion.nodes);
 
         state.coins += wonCoins;
-        curRegion.nodeProgress += wonPower;
+        const newlyCompletedMissions = applyMissionProgress(
+            state.currentRegionIdx,
+            activeNode,
+            { wonPower, wonCoins, spinCount: 1 }
+        );
 
         spawnFloatingReward(`🪙 +${wonCoins}`, window.innerWidth / 2 - 50, window.innerHeight / 2);
         setTimeout(() => spawnFloatingReward(`⚔️ +${wonPower}`, window.innerWidth / 2 + 50, window.innerHeight / 2), 200);
 
-        if (curRegion.nodeProgress >= curGoal) {
-            curRegion.nodeProgress = 0;
+        if (newlyCompletedMissions.length === 1) {
+            showToast(`✅ Mission complete: ${newlyCompletedMissions[0].title}`);
+        } else if (newlyCompletedMissions.length > 1) {
+            showToast(`✅ ${newlyCompletedMissions.length} missions completed`);
+        }
+
+        if (isCurrentNodeMissionCleared(state.currentRegionIdx, activeNode)) {
+            const missionAutoClaim = claimCompletedMissionsForNode(state.currentRegionIdx, activeNode);
+            if (missionAutoClaim.rewardCoins > 0) {
+                state.coins += missionAutoClaim.rewardCoins;
+                spawnFloatingReward(`🪙 +${missionAutoClaim.rewardCoins.toLocaleString()}`, window.innerWidth / 2 - 90, window.innerHeight / 2 - 20);
+            }
+            if (missionAutoClaim.rewardCrowns > 0) {
+                state.crowns += missionAutoClaim.rewardCrowns;
+                setTimeout(() => {
+                    spawnFloatingReward(`👑 +${missionAutoClaim.rewardCrowns}`, window.innerWidth / 2 + 90, window.innerHeight / 2);
+                }, 120);
+            }
+
             curRegion.clearedNodes += 1;
             state.crowns += 1;
 
@@ -1377,10 +1699,16 @@ function spinKingdomSlot() {
                 let popupTitle = "✨ NODE CLEARED ✨";
                 let popupMsg = "+1 Crown earned.";
                 let continueAction = "switchScreen('home'); closePopup();";
+                if (missionAutoClaim.claimedCount > 0) {
+                    popupMsg += `<br>🎯 Mission rewards auto-claimed (${missionAutoClaim.claimedCount}).`;
+                }
 
                 if (isBoss && isRegionCleared(curRegion)) {
                     popupTitle = "🔥 REGION CLEARED 🔥";
                     popupMsg = "+1 Crown (node).";
+                    if (missionAutoClaim.claimedCount > 0) {
+                        popupMsg += `<br>🎯 Mission rewards auto-claimed (${missionAutoClaim.claimedCount}).`;
+                    }
 
                     if (state.currentRegionIdx < state.regions.length - 1) {
                         const nextIdx = state.currentRegionIdx + 1;

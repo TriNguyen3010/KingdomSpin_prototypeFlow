@@ -34,9 +34,12 @@ flowchart TB
         SEnter[Enter Kingdom Slot]
         Spin[Press SPIN]
         Eval[Apply spin result: +coins +power]
-        Goal{Node goal reached?}
+        MissionTrack[Update current node mission progress]
+        MissionDone{All node missions completed?}
+        PartialDone{Any mission completed?}
+        MissionClaim[Optional: claim mission reward]
         KeepNode[Stay on current node]
-        NodeClear[Clear node: +1 crown]
+        NodeClear["Clear node: +1 crown<br>Auto-claim remaining completed mission rewards"]
         ChestUnlock[Unlock chest between cleared node and next node]
         ChestClaim[Claim chest: +coins +crown]
         BossCheck{Boss node and region cleared?}
@@ -44,9 +47,11 @@ flowchart TB
         PostPopup[Show clear popup]
     end
 
-    NodeTap --> SEnter --> Spin --> Eval --> Goal
-    Goal -->|No| KeepNode --> SEnter
-    Goal -->|Yes| NodeClear --> ChestUnlock --> ChestClaim --> BossCheck
+    NodeTap --> SEnter --> Spin --> Eval --> MissionTrack --> MissionDone
+    MissionDone -->|No| PartialDone
+    PartialDone -->|Yes| MissionClaim --> KeepNode --> SEnter
+    PartialDone -->|No| KeepNode
+    MissionDone -->|Yes| NodeClear --> ChestUnlock --> ChestClaim --> BossCheck
     BossCheck -->|Yes| RegionUnlock --> PostPopup --> Home
     BossCheck -->|No| PostPopup --> Home
 
@@ -92,3 +97,7 @@ flowchart TB
 - Region/castle unlock rule: clear boss of region `i` to unlock region `i+1` and castle `i+1`.
 - Building bonus rule: completion bonus is manual claim (one-time per region castle).
 - Reward chest rule: mỗi đường nối `node i -> node i+1` có một chest, unlock khi clear `node i`, claim 1 lần.
+- Node clear rule (mission-only): clear node khi toàn bộ mission của node hiện tại ở trạng thái `completed` hoặc `claimed`.
+- Mission reward carry rule: mission đã `completed` nhưng chưa claim sẽ auto-claim khi node clear.
+- Node mission count rule (demo): `Home=1`, `Forest=2`, `Desert/Snow/Volcano=3` mission mỗi node.
+- Node mission difficulty rule (demo): nhiệm vụ dễ, hoàn thành nhanh trong vài spin.

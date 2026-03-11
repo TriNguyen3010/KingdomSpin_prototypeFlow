@@ -31,9 +31,12 @@ flowchart TB
         SEnter[Enter Kingdom Slot]
         Spin[Press SPIN]
         Eval[Apply spin result: +coins +power]
-        Goal{Node goal reached?}
+        MissionTrack[Update current node mission progress]
+        MissionDone{All node missions completed?}
+        PartialDone{Any mission completed?}
+        MissionClaim[Optional: claim mission reward]
         KeepNode[Stay on current node]
-        NodeClear[Clear node: +1 crown]
+        NodeClear["Clear node: +1 crown<br>Auto-claim remaining completed mission rewards"]
         ChestUnlock[Unlock chest between cleared node and next node]
         ChestClaim[Claim chest: +coins +crown]
         BossCheck{Boss node and region cleared?}
@@ -41,9 +44,11 @@ flowchart TB
         PostPopup[Show clear popup]
     end
 
-    NodeTap --> SEnter --> Spin --> Eval --> Goal
-    Goal -->|No| KeepNode --> SEnter
-    Goal -->|Yes| NodeClear --> ChestUnlock --> ChestClaim --> BossCheck
+    NodeTap --> SEnter --> Spin --> Eval --> MissionTrack --> MissionDone
+    MissionDone -->|No| PartialDone
+    PartialDone -->|Yes| MissionClaim --> KeepNode --> SEnter
+    PartialDone -->|No| KeepNode
+    MissionDone -->|Yes| NodeClear --> ChestUnlock --> ChestClaim --> BossCheck
     BossCheck -->|Yes| RegionUnlock --> PostPopup --> Home
     BossCheck -->|No| PostPopup --> Home
 

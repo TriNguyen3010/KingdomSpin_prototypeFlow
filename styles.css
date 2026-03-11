@@ -693,6 +693,30 @@ body {
   justify-content: center;
 }
 
+.slot-reels-container.kingdom-slot-layout {
+  width: min(1120px, 96vw);
+  margin: 0 auto;
+  padding: 14px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 370px;
+  align-items: start;
+  justify-content: stretch;
+  gap: 18px;
+}
+
+.kingdom-slot-main {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.kingdom-slot-side {
+  min-width: 0;
+  width: 100%;
+}
+
 .reels-placeholder {
   width: 600px;
   height: 300px;
@@ -1052,10 +1076,11 @@ body {
 
 /* --- KINGDOM SLOT --- */
 .kingdom-slot-extras {
-  margin-bottom: 20px;
-  width: 600px;
+  margin-bottom: 16px;
+  width: min(680px, 100%);
 }
 
+.mission-progress-container,
 .crown-progress-container {
   background: rgba(0, 0, 0, 0.5);
   height: 24px;
@@ -1065,6 +1090,7 @@ body {
   position: relative;
 }
 
+.mission-progress-fill,
 .crown-progress-bar {
   height: 100%;
   background: linear-gradient(90deg, #c084fc, #a855f7);
@@ -1077,6 +1103,7 @@ body {
   background: linear-gradient(90deg, #f87171, #dc2626);
 }
 
+.mission-progress-text,
 .crown-progress-text {
   position: absolute;
   top: 0;
@@ -1089,6 +1116,198 @@ body {
   font-size: 0.9rem;
   font-weight: 800;
   text-shadow: 0 1px 2px black;
+}
+
+.kingdom-slot-main .kingdom-slot-machine {
+  width: min(680px, 100%);
+  margin-bottom: 22px;
+}
+
+.kingdom-slot-main .bet-controls {
+  margin-bottom: 20px;
+}
+
+.kingdom-slot-side .node-mission-board {
+  margin-top: 0;
+}
+
+.node-mission-board {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.node-mission-board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #dbeafe;
+  letter-spacing: 0.15px;
+  text-transform: uppercase;
+}
+
+.node-mission-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.node-mission-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(2, 6, 23, 0.92));
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.node-mission-card.active {
+  border-color: rgba(56, 189, 248, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.18);
+}
+
+.node-mission-card.completed {
+  border-color: rgba(34, 197, 94, 0.65);
+  background: linear-gradient(180deg, rgba(20, 83, 45, 0.58), rgba(2, 6, 23, 0.94));
+}
+
+.node-mission-card.claimed {
+  border-color: rgba(45, 212, 191, 0.42);
+  opacity: 0.8;
+}
+
+.node-mission-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.node-mission-title {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.node-mission-status {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.72);
+  text-transform: uppercase;
+}
+
+.node-mission-status.active {
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #7dd3fc;
+}
+
+.node-mission-status.completed {
+  border-color: rgba(34, 197, 94, 0.72);
+  color: #86efac;
+}
+
+.node-mission-status.claimed {
+  border-color: rgba(45, 212, 191, 0.72);
+  color: #5eead4;
+}
+
+.node-mission-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.node-mission-progress-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.node-mission-progress-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #22d3ee, #0ea5e9);
+  transition: width 0.25s ease;
+}
+
+.node-mission-card.completed .node-mission-progress-fill,
+.node-mission-card.claimed .node-mission-progress-fill {
+  background: linear-gradient(90deg, #4ade80, #22c55e);
+}
+
+.node-mission-progress-text {
+  min-width: 56px;
+  text-align: right;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #cbd5e1;
+}
+
+.node-mission-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.node-mission-reward {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #fcd34d;
+}
+
+.node-mission-claim-btn {
+  margin-left: auto;
+  border: 1px solid rgba(74, 222, 128, 0.8);
+  border-radius: 999px;
+  padding: 4px 12px;
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.95), rgba(22, 101, 52, 0.95));
+  color: #ecfdf5;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.node-mission-claim-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.node-mission-chip {
+  margin-left: auto;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.78);
+}
+
+.node-mission-chip.active {
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #7dd3fc;
+}
+
+.node-mission-chip.completed {
+  border-color: rgba(34, 197, 94, 0.72);
+  color: #86efac;
+}
+
+.node-mission-chip.claimed {
+  border-color: rgba(45, 212, 191, 0.72);
+  color: #5eead4;
 }
 
 /* --- CASTLE SCREEN --- */
@@ -1792,6 +2011,46 @@ body {
     --node-row-gap: 120px;
     --path-line-length: 120px;
     --node-to-chest-gap: 25px;
+  }
+
+  .slot-reels-container.kingdom-slot-layout {
+    width: min(680px, 94vw);
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding-top: 10px;
+  }
+
+  .kingdom-slot-extras {
+    width: min(640px, 100%);
+  }
+
+  .kingdom-slot-main .kingdom-slot-machine {
+    width: min(640px, 100%);
+  }
+
+  .kingdom-slot-side {
+    order: 2;
+  }
+
+  .node-mission-board-head {
+    font-size: 0.72rem;
+  }
+
+  .node-mission-title {
+    font-size: 0.83rem;
+  }
+
+  .node-mission-status {
+    font-size: 0.66rem;
+  }
+
+  .node-mission-progress-text {
+    min-width: 48px;
+    font-size: 0.72rem;
+  }
+
+  .node-mission-reward {
+    font-size: 0.74rem;
   }
 
   .castle-topbar {
