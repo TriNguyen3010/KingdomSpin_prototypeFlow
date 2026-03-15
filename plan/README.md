@@ -11,7 +11,9 @@ Lưu các kế hoạch triển khai theo từng tính năng.
   - Checklist QA
 
 ## Danh sách plan
+- [2026-03-15-flow-2-scripted-castle-onboarding.md](./2026-03-15-flow-2-scripted-castle-onboarding.md)
 - [2026-03-10-kingdom-mode-reward-chest.md](./2026-03-10-kingdom-mode-reward-chest.md)
 - [2026-03-11-kingdom-node-mission-board.md](./2026-03-11-kingdom-node-mission-board.md)
 - [2026-03-11-kingdom-mission-only-right-layout.md](./2026-03-11-kingdom-mission-only-right-layout.md)
 - [2026-03-11-kingdom-spin-lock-on-mission-ready.md](./2026-03-11-kingdom-spin-lock-on-mission-ready.md)
+- [2026-03-12-roadmap-ui-reskin-analysis.md](./2026-03-12-roadmap-ui-reskin-analysis.md)

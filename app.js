@@ -9,12 +9,28 @@ const MISSION_STATUS = {
     COMPLETED: 'completed',
     CLAIMED: 'claimed'
 };
+const FLOW2_CASTLE_TASK_STATUS = {
+    LOCKED: 'locked',
+    ACTIVE: 'active',
+    DONE: 'done'
+};
 const CASTLE_SLOT_BLUEPRINT = [
     { key: 'keep', name: 'Keep', baseCost: 4, visuals: ['🪨', '🧱', '🏯', '🏰'] },
     { key: 'gate', name: 'Gate', baseCost: 5, visuals: ['🚧', '🚪', '🛡️', '🚪✨'] },
     { key: 'tower', name: 'Tower', baseCost: 6, visuals: ['🪵', '🗼', '🏛️', '🗼✨'] },
     { key: 'garden', name: 'Garden', baseCost: 4, visuals: ['🌱', '🌿', '🌳', '🌺'] }
 ];
+const FLOW2_CASTLE_MISSIONS = [
+    { id: 'build_castle', title: 'Build castle', cost: 1, visual: '🏰' },
+    { id: 'build_fountain', title: 'Build the fountain', cost: 1, visual: '⛲' }
+];
+
+function createFlow2CastleMissions() {
+    return FLOW2_CASTLE_MISSIONS.map((mission, idx) => ({
+        ...mission,
+        status: idx === 0 ? FLOW2_CASTLE_TASK_STATUS.ACTIVE : FLOW2_CASTLE_TASK_STATUS.LOCKED
+    }));
+}
 
 function createRegionCastle() {
     return {
@@ -63,7 +79,8 @@ function createInitialRegions() {
             clearedNodes: 0,
             castle,
             chests: createRegionChests(idx, region.nodes),
-            nodeMissions: {}
+            nodeMissions: {},
+            flow2CastleMissions: createFlow2CastleMissions()
         };
     });
 }
@@ -121,42 +138,556 @@ function getDefaultBuildingRegionIdx() {
     return unlocked.length > 0 ? unlocked[0] : 0;
 }
 
+function createFlow2State() {
+    return {
+        active: false,
+        step: null,
+        tutorialComplete: false,
+        taskPanelOpen: false,
+        taskNotif: false,
+        universalNotif: false,
+        mustBuildBeforeNextNode: false,
+        shownLevelIntros: {
+            1: false,
+            2: false
+        },
+        areaCompleteShown: false
+    };
+}
+
 // State Management
-const state = {
-    coins: 402685,
-    crowns: 500,
-    mode: 'casino', // 'casino' | 'kingdom'
-    screen: 'home', // 'home' | 'casino-slot' | 'kingdom-slot' | 'castle'
+function getInitialState() {
+    return {
+        coins: 402685,
+        crowns: 500,
+        popupLocked: false,
+        mode: 'casino', // 'casino' | 'kingdom'
+        screen: 'home', // 'home' | 'casino-slot' | 'kingdom-slot' | 'castle'
 
-    // Expanded Region & Node State
-    regions: createInitialRegions(),
-    currentRegionIdx: 0,
-    buildingRegionIdx: 0,
-    casinoBet: 1000,
-    casinoSlotEngine: null,
-    casinoSpinBusy: false,
-    kingdomSlotEngine: null,
-    kingdomSpinBusy: false,
+        // Expanded Region & Node State
+        regions: createInitialRegions(),
+        currentRegionIdx: 0,
+        buildingRegionIdx: 0,
+        casinoBet: 1000,
+        casinoSlotEngine: null,
+        casinoSpinBusy: false,
+        kingdomSlotEngine: null,
+        kingdomSpinBusy: false,
 
-    universalOpen: false,
+        universalOpen: false,
 
-    // Casino Level System
-    casinoLevel: 1,
-    casinoXP: 0,
-    casinoXPToNext: 80,
-    selectedMachine: 0,
-    casinoMachines: [
-        { name: 'Wild West', icon: '🎰', unlockLevel: 1, color: '#f59e0b', rarity: 'Common' },
-        { name: 'Diamond Rush', icon: '💎', unlockLevel: 1, color: '#3b82f6', rarity: 'Common' },
-        { name: 'Mystic Fox', icon: '🦊', unlockLevel: 3, color: '#8b5cf6', rarity: 'Rare' },
-        { name: 'Dragon Nest', icon: '🐉', unlockLevel: 5, color: '#ef4444', rarity: 'Rare' },
-        { name: 'Golden Temple', icon: '🏙️', unlockLevel: 7, color: '#eab308', rarity: 'Epic' },
-        { name: 'Neon City', icon: '🌆', unlockLevel: 10, color: '#06b6d4', rarity: 'Epic' },
-        { name: 'Ocean Deep', icon: '🌊', unlockLevel: 12, color: '#0ea5e9', rarity: 'Legendary' },
-        { name: 'Dark Magic', icon: '🔮', unlockLevel: 15, color: '#a855f7', rarity: 'Legendary' },
-        { name: 'Star Realm', icon: '⭐', unlockLevel: 18, color: '#f97316', rarity: 'Mythic' }
-    ]
-};
+        // Casino Level System
+        casinoLevel: 1,
+        casinoXP: 0,
+        casinoXPToNext: 80,
+        selectedMachine: 0,
+        casinoMachines: [
+            { name: 'Wild West', icon: '🎰', unlockLevel: 1, color: '#f59e0b', rarity: 'Common' },
+            { name: 'Diamond Rush', icon: '💎', unlockLevel: 1, color: '#3b82f6', rarity: 'Common' },
+            { name: 'Mystic Fox', icon: '🦊', unlockLevel: 3, color: '#8b5cf6', rarity: 'Rare' },
+            { name: 'Dragon Nest', icon: '🐉', unlockLevel: 5, color: '#ef4444', rarity: 'Rare' },
+            { name: 'Golden Temple', icon: '🏙️', unlockLevel: 7, color: '#eab308', rarity: 'Epic' },
+            { name: 'Neon City', icon: '🌆', unlockLevel: 10, color: '#06b6d4', rarity: 'Epic' },
+            { name: 'Ocean Deep', icon: '🌊', unlockLevel: 12, color: '#0ea5e9', rarity: 'Legendary' },
+            { name: 'Dark Magic', icon: '🔮', unlockLevel: 15, color: '#a855f7', rarity: 'Legendary' },
+            { name: 'Star Realm', icon: '⭐', unlockLevel: 18, color: '#f97316', rarity: 'Mythic' }
+        ],
+        flow2: createFlow2State()
+    };
+}
+
+let state = getInitialState();
+let currentFlow = 1;
+
+function isFlow2Active() {
+    return currentFlow === 2 && !!state.flow2?.active;
+}
+
+function getFlow2State() {
+    if (!state.flow2) state.flow2 = createFlow2State();
+    return state.flow2;
+}
+
+function isFlow2TutorialActive() {
+    return isFlow2Active() && !getFlow2State().tutorialComplete;
+}
+
+function setFlow2Step(step) {
+    if (!isFlow2Active()) return;
+    state.flow2.step = step;
+}
+
+function getFlow2CurrentRegion() {
+    return state.regions[state.currentRegionIdx];
+}
+
+function getFlow2CurrentLevelGoal(nodeNum) {
+    if (nodeNum === 1) return 'Clear the first node.';
+    if (nodeNum === 2) return 'Clear the next node.';
+    return 'Clear the boss node.';
+}
+
+function getFlow2LevelLabel(nodeNum) {
+    return `Level ${nodeNum}`;
+}
+
+function getFlow2CastleMissions() {
+    const curRegion = getFlow2CurrentRegion();
+    if (!curRegion) return [];
+    if (!Array.isArray(curRegion.flow2CastleMissions)) {
+        curRegion.flow2CastleMissions = createFlow2CastleMissions();
+    }
+    return curRegion.flow2CastleMissions;
+}
+
+function getFlow2ActiveMission() {
+    return getFlow2CastleMissions().find((mission) => mission.status === FLOW2_CASTLE_TASK_STATUS.ACTIVE) || null;
+}
+
+function getFlow2DoneMissionCount() {
+    return getFlow2CastleMissions().filter((mission) => mission.status === FLOW2_CASTLE_TASK_STATUS.DONE).length;
+}
+
+function isFlow2CastleCompleted() {
+    const missions = getFlow2CastleMissions();
+    return missions.length > 0 && missions.every((mission) => mission.status === FLOW2_CASTLE_TASK_STATUS.DONE);
+}
+
+function getFlow2CastleProgressText() {
+    const missions = getFlow2CastleMissions();
+    return `${getFlow2DoneMissionCount()}/${missions.length} missions`;
+}
+
+function hasFlow2CastleNotif() {
+    if (!isFlow2Active()) return false;
+    const activeMission = getFlow2ActiveMission();
+    return !!activeMission && state.crowns >= activeMission.cost;
+}
+
+function getFirstClaimableChestIdx(region) {
+    if (!region?.chests) return null;
+    const idx = region.chests.findIndex((_, chestIdx) => getChestStatus(region, chestIdx) === 'claimable');
+    return idx >= 0 ? idx : null;
+}
+
+function showRichPopup({
+    title,
+    goalText = '',
+    bodyLines = [],
+    ctaLabel = 'Continue',
+    onClick = 'closePopup(true)',
+    lock = false,
+    showBoosters = false
+}) {
+    state.popupLocked = !!lock;
+
+    const bodyHtml = bodyLines.map((line) => `<p class="flow2-popup-body">${line}</p>`).join('');
+    const goalHtml = goalText
+        ? `
+            <div class="flow2-popup-goal-label">Goal</div>
+            <div class="flow2-popup-goal-text">${goalText}</div>
+        `
+        : '';
+    const boostersHtml = showBoosters
+        ? `
+            <div class="flow2-popup-boosters" aria-hidden="true">
+                <span>🔨</span>
+                <span>🛡️</span>
+                <span>👑</span>
+            </div>
+        `
+        : '';
+
+    els.popup.innerHTML = `
+        <div class="flow2-popup-shell">
+            <div class="flow2-popup-title-badge">${title}</div>
+            ${goalHtml}
+            ${boostersHtml}
+            <div class="flow2-popup-copy">${bodyHtml}</div>
+            <button class="btn flow2-popup-btn" onclick="${onClick}">${ctaLabel}</button>
+        </div>
+    `;
+    els.popup.style.borderColor = 'rgba(251, 191, 36, 0.8)';
+    els.popup.style.boxShadow = '0 22px 60px rgba(0,0,0,0.75), 0 0 30px rgba(251, 191, 36, 0.22)';
+    els.overlay.classList.remove('hidden');
+    els.popup.classList.remove('hidden');
+    void els.popup.offsetWidth;
+    els.popup.classList.add('show');
+}
+
+function showFlow2LevelIntroPopup(nodeNum) {
+    if (!isFlow2Active()) return;
+    setFlow2Step(nodeNum === 1 ? 'flow2_level1_intro' : 'flow2_level2_intro');
+    showRichPopup({
+        title: getFlow2LevelLabel(nodeNum),
+        goalText: getFlow2CurrentLevelGoal(nodeNum),
+        ctaLabel: 'Play',
+        onClick: `handleFlow2LevelIntroPlay(${nodeNum})`,
+        lock: true,
+        showBoosters: true
+    });
+}
+
+function showFlow2NodeClearPopup(bodyLines) {
+    showRichPopup({
+        title: 'Well Done!',
+        bodyLines,
+        ctaLabel: 'Continue',
+        onClick: 'handleFlow2NodeClearContinue()',
+        lock: true
+    });
+}
+
+function showFlow2AreaCompletePopup() {
+    showRichPopup({
+        title: 'Area Complete',
+        bodyLines: ['You cleared the boss and completed the castle.'],
+        ctaLabel: 'Continue',
+        onClick: 'handleFlow2AreaCompleteContinue()',
+        lock: true
+    });
+}
+
+function handleFlow2LevelIntroPlay(nodeNum) {
+    if (!isFlow2Active()) return;
+    const flow2 = getFlow2State();
+    flow2.shownLevelIntros[nodeNum] = true;
+    state.popupLocked = false;
+    closePopup(true);
+    state.mode = 'kingdom';
+    state.screen = 'kingdom-slot';
+    flow2.taskPanelOpen = false;
+    flow2.step = nodeNum === 1 ? 'flow2_node1_spin' : 'flow2_node2_spin';
+    renderTopBar();
+    renderScreen();
+}
+
+function handleFlow2NodeClearContinue() {
+    if (!isFlow2Active()) return;
+    state.popupLocked = false;
+    closePopup(true);
+    state.mode = 'kingdom';
+    state.screen = 'home';
+    const curRegion = getFlow2CurrentRegion();
+    if (getFirstClaimableChestIdx(curRegion) !== null) {
+        setFlow2Step('flow2_area_map_chest_ready');
+    } else if (isRegionCleared(curRegion) && !isFlow2CastleCompleted()) {
+        setFlow2Step('area_complete_pending');
+    }
+    renderTopBar();
+    renderScreen();
+}
+
+function handleFlow2AreaCompleteContinue() {
+    if (!isFlow2Active()) return;
+    state.popupLocked = false;
+    closePopup(true);
+
+    const flow2 = getFlow2State();
+    const nextRegionIdx = state.currentRegionIdx + 1;
+    if (nextRegionIdx < state.regions.length) {
+        state.regions[nextRegionIdx].unlocked = true;
+        state.regions[nextRegionIdx].castle.unlocked = true;
+        flow2.universalNotif = true;
+    }
+
+    flow2.taskPanelOpen = false;
+    flow2.taskNotif = false;
+    flow2.mustBuildBeforeNextNode = false;
+    flow2.areaCompleteShown = false;
+    flow2.step = 'flow2_area_map_ready';
+
+    if (nextRegionIdx < state.regions.length) {
+        travelToRegion(nextRegionIdx);
+        showToast('Next area unlocked.');
+        return;
+    }
+
+    renderTopBar();
+    renderScreen();
+    showToast('All areas unlocked.');
+}
+
+function openFlow2TaskPanel() {
+    if (!isFlow2Active()) return;
+    const curRegion = getFlow2CurrentRegion();
+    if (isFlow2TutorialActive() && getFirstClaimableChestIdx(curRegion) !== null) {
+        showToast('Claim your chest reward first.');
+        return;
+    }
+    getFlow2State().taskNotif = false;
+    state.mode = 'kingdom';
+    state.screen = 'home';
+    getFlow2State().taskPanelOpen = true;
+    renderTopBar();
+    renderScreen();
+}
+
+function closeFlow2TaskPanel() {
+    if (!isFlow2Active()) return;
+    if (getFlow2State().step === 'flow2_castle_mission2_unlocked') {
+        setFlow2Step('flow2_node2_ready');
+    }
+    getFlow2State().taskPanelOpen = false;
+    renderScreen();
+}
+
+function openFlow2ActiveMission() {
+    if (!isFlow2Active()) return;
+    const curRegion = getFlow2CurrentRegion();
+    if (isFlow2TutorialActive() && getFirstClaimableChestIdx(curRegion) !== null) {
+        showToast('Claim your chest reward first.');
+        return;
+    }
+    const activeMission = getFlow2ActiveMission();
+    if (!activeMission) {
+        showToast('Castle completed.');
+        return;
+    }
+
+    getFlow2State().taskPanelOpen = false;
+    state.buildingRegionIdx = state.currentRegionIdx;
+    switchScreen('castle');
+}
+
+function maybeCompleteFlow2Area() {
+    if (!isFlow2Active()) return false;
+    const flow2 = getFlow2State();
+    const curRegion = getFlow2CurrentRegion();
+    if (!curRegion) return false;
+    if (!isRegionCleared(curRegion) || !isFlow2CastleCompleted() || flow2.areaCompleteShown) return false;
+
+    flow2.areaCompleteShown = true;
+    setFlow2Step('area_complete');
+    showFlow2AreaCompletePopup();
+    return true;
+}
+
+function buildFlow2CastleMission() {
+    if (!isFlow2Active()) return;
+    const activeMission = getFlow2ActiveMission();
+    if (!activeMission) {
+        showToast('Castle already completed.');
+        return;
+    }
+
+    if (state.crowns < activeMission.cost) {
+        showPopup('🚫 NOT ENOUGH CROWNS', `Need ${activeMission.cost} crown${activeMission.cost > 1 ? 's' : ''} to ${activeMission.title.toLowerCase()}.`);
+        return;
+    }
+
+    state.crowns -= activeMission.cost;
+    activeMission.status = FLOW2_CASTLE_TASK_STATUS.DONE;
+    const missions = getFlow2CastleMissions();
+    const nextMission = missions.find((mission) => mission.status === FLOW2_CASTLE_TASK_STATUS.LOCKED);
+    if (nextMission) nextMission.status = FLOW2_CASTLE_TASK_STATUS.ACTIVE;
+
+    const flow2 = getFlow2State();
+    flow2.mustBuildBeforeNextNode = false;
+    flow2.taskNotif = true;
+    flow2.taskPanelOpen = true;
+    state.mode = 'kingdom';
+    state.screen = 'home';
+
+    if (activeMission.id === 'build_castle' && nextMission?.id === 'build_fountain') {
+        flow2.tutorialComplete = true;
+        setFlow2Step('flow2_castle_mission2_unlocked');
+    } else if (isFlow2CastleCompleted()) {
+        setFlow2Step('flow2_castle_completed');
+    } else {
+        setFlow2Step('flow2_castle_mission_guided');
+    }
+
+    renderTopBar();
+    renderScreen();
+    spawnFloatingReward(`${activeMission.visual} Done`, window.innerWidth / 2, window.innerHeight / 2);
+    showToast(`${activeMission.title} complete.`);
+
+    if (maybeCompleteFlow2Area()) return;
+}
+
+function onFlow2NodeClick(nodeNum) {
+    if (!isFlow2Active()) return;
+    const flow2 = getFlow2State();
+    const curRegion = getFlow2CurrentRegion();
+    if (!curRegion) return;
+    const activeNode = getRegionCurrentNode(curRegion);
+    if (nodeNum !== activeNode || isRegionCleared(curRegion)) return;
+
+    if (isFlow2TutorialActive()) {
+        const claimableChestIdx = getFirstClaimableChestIdx(curRegion);
+        if (claimableChestIdx !== null) {
+            showToast('Claim your chest reward first.');
+            return;
+        }
+
+        if (flow2.mustBuildBeforeNextNode) {
+            openFlow2TaskPanel();
+            showToast('Finish the current castle task first.');
+            return;
+        }
+    }
+
+    if (nodeNum === 1 && !flow2.shownLevelIntros[1]) {
+        showFlow2LevelIntroPopup(1);
+        return;
+    }
+
+    if (nodeNum === 2 && !flow2.shownLevelIntros[2]) {
+        showFlow2LevelIntroPopup(2);
+        return;
+    }
+
+    switchScreen('kingdom-slot');
+}
+
+function renderFlow2TaskPanel() {
+    if (!isFlow2Active() || !getFlow2State().taskPanelOpen) return '';
+
+    const missionRows = getFlow2CastleMissions().map((mission) => {
+        const isActive = mission.status === FLOW2_CASTLE_TASK_STATUS.ACTIVE;
+        const rowClass = `flow2-task-row ${mission.status}`;
+        const action = isActive ? `<button class="flow2-task-btn" onclick="openFlow2ActiveMission()">Build</button>` : '';
+        const badge = mission.status === FLOW2_CASTLE_TASK_STATUS.DONE
+            ? '<div class="flow2-task-badge done">Done</div>'
+            : `<div class="flow2-task-badge ${mission.status}">${mission.status === FLOW2_CASTLE_TASK_STATUS.ACTIVE ? `Cost · 👑 ${mission.cost}` : 'Locked'}</div>`;
+
+        return `
+            <div class="${rowClass}">
+                <div class="flow2-task-row-main">
+                    <div class="flow2-task-icon">${mission.visual}</div>
+                    <div class="flow2-task-copy">
+                        <div class="flow2-task-title">${mission.title}</div>
+                        <div class="flow2-task-sub">${badge}</div>
+                    </div>
+                </div>
+                ${action}
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <aside class="flow2-task-panel">
+            <div class="flow2-task-panel-head">
+                <div class="flow2-task-panel-title">Castle</div>
+                <button class="flow2-task-close" onclick="closeFlow2TaskPanel()" aria-label="Close task list">✕</button>
+            </div>
+            <div class="flow2-task-panel-list">
+                ${missionRows}
+            </div>
+        </aside>
+    `;
+}
+
+function renderFlow2MapCastleAnchor() {
+    const activeMission = getFlow2ActiveMission();
+    const subtitle = isFlow2CastleCompleted()
+        ? 'Castle completed'
+        : (activeMission ? activeMission.title : 'Open castle');
+    const stateClass = isFlow2CastleCompleted() ? 'done' : (activeMission ? 'active' : 'idle');
+
+    return `
+        <button class="flow2-map-castle-anchor ${stateClass}" onclick="openFlow2ActiveMission()">
+            <div class="flow2-map-castle-icon">${isFlow2CastleCompleted() ? '🏰' : '🏯'}</div>
+            <div class="flow2-map-castle-copy">
+                <div class="flow2-map-castle-title">Castle</div>
+                <div class="flow2-map-castle-sub">${subtitle}</div>
+            </div>
+        </button>
+    `;
+}
+
+function renderFlow2GoalPanel(curRegion) {
+    const activeNode = getRegionCurrentNode(curRegion);
+    return `
+        <div class="flow2-goal-card">
+            <div class="flow2-goal-label">${getFlow2LevelLabel(activeNode)}</div>
+            <div class="flow2-goal-text">${getFlow2CurrentLevelGoal(activeNode)}</div>
+        </div>
+    `;
+}
+
+function renderFlow2KingdomHome(curRegion, theme) {
+    const mapHTML = renderKingdomMapNodes(curRegion, state.currentRegionIdx, theme);
+    const taskPanelHtml = renderFlow2TaskPanel();
+
+    return `
+        <div class="screen active map-screen flow2-map-screen" style="background-color: ${theme.bg};">
+            <div class="map-region-nav flow2-map-nav">
+                <div class="region-title">${curRegion.name}</div>
+            </div>
+            <div class="flow2-map-top-strip">
+                ${renderFlow2MapCastleAnchor()}
+                <div class="flow2-map-progress-pill">${getFlow2CastleProgressText()}</div>
+            </div>
+            <div class="map-nodes">${mapHTML}</div>
+            ${taskPanelHtml}
+        </div>
+    `;
+}
+
+function renderFlow2KingdomSlot(curRegion) {
+    const theme = KINGDOM_SLOT_THEMES[curRegion.id] || KINGDOM_SLOT_THEMES.home;
+
+    return `
+        <div class="screen active slot-screen">
+            <div class="slot-header" style="background: rgba(0,0,0,0.8);">
+                <button class="back-btn" onclick="switchScreen('home')">◀ BACK</button>
+                <div class="slot-region-tag" style="color: ${theme.accent};">${curRegion.name}</div>
+                <div class="slot-header-content" style="color: ${theme.accent};">${getFlow2LevelLabel(getRegionCurrentNode(curRegion))}</div>
+            </div>
+            <div class="slot-reels-container kingdom-slot-layout flow2-slot-layout">
+                <div class="kingdom-slot-main">
+                    <div class="kingdom-slot-machine" id="kingdom-slot-machine" style="--slot-accent: ${theme.reelBorder}; --slot-glow: ${theme.reelGlow};">
+                        <div class="k-reel"></div>
+                        <div class="k-reel"></div>
+                        <div class="k-reel"></div>
+                        <div class="k-reel"></div>
+                        <div class="k-reel"></div>
+                    </div>
+                    <button id="kingdom-spin-btn" class="spin-btn" style="background: linear-gradient(to bottom, ${theme.accent}, ${theme.accent}aa); border-color: ${theme.accent}; box-shadow: 0 10px 0 ${theme.accent}55, 0 15px 20px rgba(0,0,0,0.6);" ${state.kingdomSpinBusy ? 'disabled' : 'onclick="spinKingdomSlot()"'}>SPIN</button>
+                </div>
+                <aside class="kingdom-slot-side">
+                    ${renderFlow2GoalPanel(curRegion)}
+                </aside>
+            </div>
+        </div>
+    `;
+}
+
+function renderFlow2CastleScreen(curRegion) {
+    const activeMission = getFlow2ActiveMission();
+    const canBuild = !!activeMission && state.crowns >= activeMission.cost;
+    const missionTitle = activeMission ? activeMission.title : 'Castle completed';
+    const missionCost = activeMission ? activeMission.cost : 0;
+    const missionVisual = activeMission ? activeMission.visual : '🏰';
+    const stageArt = ['🏚️', '🏯', '🏰'][Math.min(getFlow2DoneMissionCount(), 2)];
+
+    return `
+        <div class="screen active castle-bg flow2-castle-screen">
+            <div class="flow2-castle-shell">
+                <div class="flow2-castle-head">
+                    <button class="castle-ui-btn" onclick="switchScreen('home')" aria-label="Back to map">◀ Back</button>
+                    <div class="flow2-castle-head-copy">
+                        <div class="flow2-castle-head-title">Castle</div>
+                        <div class="flow2-castle-head-sub">${getFlow2CastleProgressText()}</div>
+                    </div>
+                </div>
+                <div class="flow2-castle-stage ${isFlow2CastleCompleted() ? 'complete' : ''}">
+                    <div class="flow2-castle-stage-art">${stageArt}</div>
+                    <div class="flow2-castle-stage-note">${curRegion.name.replace(/^[^\s]+\s/, '')} Castle</div>
+                </div>
+                <div class="flow2-castle-mission-card">
+                    <div class="flow2-castle-mission-kicker">Current mission</div>
+                    <div class="flow2-castle-mission-title">${missionVisual} ${missionTitle}</div>
+                    <div class="flow2-castle-mission-cost">Cost · 👑 ${missionCost}</div>
+                    <button class="flow2-build-btn" onclick="buildFlow2CastleMission()" ${!activeMission || !canBuild ? 'disabled' : ''}>Build</button>
+                    ${activeMission && !canBuild ? '<div class="flow2-castle-hint">Need more crowns from chest rewards.</div>' : ''}
+                </div>
+            </div>
+        </div>
+    `;
+}
 
 const KINGDOM_SLOT_SYMBOLS = ['crown', 'shield', 'sword', 'gem', 'leaf', 'hammer', 'helm'];
 const KINGDOM_SLOT_SYMBOL_MAP = {
@@ -801,6 +1332,9 @@ function getChestTooltip(chest, status) {
 function renderKingdomMapNodes(curRegion, regionIdx, theme) {
     const activeNode = getRegionCurrentNode(curRegion);
     const regionCleared = isRegionCleared(curRegion);
+    const tutorialActive = isFlow2TutorialActive();
+    const claimableChestIdx = tutorialActive ? getFirstClaimableChestIdx(curRegion) : null;
+    const highlightBuild = tutorialActive && getFlow2State().mustBuildBeforeNextNode;
     let mapHTML = '';
     let nodesInRow = 0;
 
@@ -814,13 +1348,19 @@ function renderKingdomMapNodes(curRegion, regionIdx, theme) {
             // Không gán onclick, không cho màn hình slot khi đã cleared
         } else if (!regionCleared && i === activeNode) {
             status = 'current';
-            onclick = "switchScreen('kingdom-slot')";
+            onclick = isFlow2Active() ? `onFlow2NodeClick(${i})` : "switchScreen('kingdom-slot')";
         }
 
         let nodeStyle = '';
-        if (isBoss) nodeStyle = `border-color: ${theme.bossBorder}; box-shadow: 0 0 25px rgba(239,68,68,0.7);`;
-        else if (status === 'unlocked') nodeStyle = `border-color: ${theme.border}; box-shadow: 0 0 20px ${theme.glow}; background: ${theme.border}22;`;
-        else if (status === 'current') nodeStyle = `border-color: ${theme.border}; box-shadow: 0 0 35px ${theme.glow}; background: radial-gradient(circle, ${theme.border}88, ${theme.border}33);`;
+        if (isBoss && status === 'current') {
+            nodeStyle = `--node-accent: ${theme.bossBorder}; --node-halo: rgba(248,113,113,0.72); border-color: ${theme.bossBorder}; box-shadow: 0 0 42px rgba(239,68,68,0.88), inset 0 0 24px rgba(255,255,255,0.08); background: radial-gradient(circle at 35% 28%, rgba(255,255,255,0.22), rgba(248,113,113,0.42) 34%, rgba(127,29,29,0.98) 100%);`;
+        } else if (isBoss) {
+            nodeStyle = `--node-accent: ${theme.bossBorder}; --node-halo: rgba(248,113,113,0.52); border-color: ${theme.bossBorder}; box-shadow: 0 0 25px rgba(239,68,68,0.7);`;
+        } else if (status === 'unlocked') {
+            nodeStyle = `--node-accent: ${theme.border}; --node-halo: ${theme.glow}; border-color: ${theme.border}; box-shadow: 0 0 20px ${theme.glow}; background: ${theme.border}22;`;
+        } else if (status === 'current') {
+            nodeStyle = `--node-accent: ${theme.border}; --node-halo: ${theme.glow}; border-color: ${theme.border}; box-shadow: 0 0 0 4px rgba(255,255,255,0.08), 0 0 42px ${theme.glow}, inset 0 0 24px rgba(255,255,255,0.08); background: radial-gradient(circle at 35% 28%, rgba(255,255,255,0.3), ${theme.border}8f 34%, ${theme.border}2d 100%); color: #04131d;`;
+        }
 
         const extraClass = isBoss ? 'boss-node' : '';
         const innerText = isBoss ? '☠️' : i;
@@ -839,15 +1379,18 @@ function renderKingdomMapNodes(curRegion, regionIdx, theme) {
             const chestTooltip = getChestTooltip(chest, chestStatus);
             const chestAction = chestStatus === 'claimable' ? `onclick="claimChest(${chestIdx})"` : '';
             const chestIcon = chestStatus === 'claimed' ? '✅' : (chestStatus === 'claimable' ? '🎁' : '🧰');
+            const flow2TargetClass = isFlow2Active() && claimableChestIdx === chestIdx ? ' flow2-target' : '';
             chestHtml = `
-                <button type="button" class="reward-chest ${chestStatus}" title="${chestTooltip}" aria-label="${chestTooltip}" ${chestAction}>${chestIcon}</button>
+                <button type="button" class="reward-chest ${chestStatus}${flow2TargetClass}" title="${chestTooltip}" aria-label="${chestTooltip}" ${chestAction}>${chestIcon}</button>
             `;
         }
+
+        const flow2NodeTargetClass = isFlow2Active() && i === activeNode && (!tutorialActive || (claimableChestIdx === null && !highlightBuild)) ? ' flow2-target' : '';
 
         if (nodesInRow === 0) mapHTML += '<div class="node-row">';
         mapHTML += `
             <div class="node-wrapper">
-                <div class="level-node ${status} ${extraClass} tooltip" data-tip="${tooltip}" style="${nodeStyle}" ${onclick ? 'onclick="' + onclick + '"' : ''}>${innerText}${pathLine}</div>
+                <div class="level-node ${status} ${extraClass}${flow2NodeTargetClass} tooltip" data-tip="${tooltip}" style="${nodeStyle}" ${onclick ? 'onclick="' + onclick + '"' : ''}>${innerText}${pathLine}</div>
                 ${chestHtml}
             </div>
         `;
@@ -889,6 +1432,23 @@ function renderTopBar() {
             </div>
             <button class="btn btn-icon" style="background: #374151; border-color: #4b5563;">⚙</button>
         `;
+    } else if (isFlow2Active()) {
+        if (state.screen === 'kingdom-slot') {
+            els.topBarRight.innerHTML = '';
+            return;
+        }
+        const flow2 = getFlow2State();
+        const universalDot = flow2.universalNotif ? '<span class="btn-notify-dot" aria-hidden="true"></span>' : '';
+        const taskDot = flow2.taskNotif ? '<span class="btn-notify-dot" aria-hidden="true"></span>' : '';
+        const castleDot = hasFlow2CastleNotif() ? '<span class="btn-notify-dot" aria-hidden="true"></span>' : '';
+        els.topBarRight.innerHTML = `
+            <button class="btn btn-with-dot" id="btn-flow2-universal" style="background: linear-gradient(to bottom, #8b5cf6, #5b21b6); border-color: #a78bfa;">🌍 Universal${universalDot}</button>
+            <button class="btn btn-with-dot" id="btn-flow2-task" style="background: linear-gradient(to bottom, #2563eb, #1d4ed8); border-color: #60a5fa;">📝 Tasks${taskDot}</button>
+            <button class="btn btn-with-dot" id="btn-flow2-castle" style="background: linear-gradient(to bottom, #d946ef, #a21caf); border-color: #f0abfc;">🏰 Castle${castleDot}</button>
+        `;
+        document.getElementById('btn-flow2-universal').addEventListener('click', toggleUniversalPanel);
+        document.getElementById('btn-flow2-task').addEventListener('click', openFlow2TaskPanel);
+        document.getElementById('btn-flow2-castle').addEventListener('click', openFlow2ActiveMission);
     } else {
         els.topBarRight.innerHTML = `
             <button class="btn" id="btn-universal" style="background: linear-gradient(to bottom, #8b5cf6, #5b21b6); border-color: #a78bfa;">🌍 Universal</button>
@@ -901,6 +1461,7 @@ function renderTopBar() {
 
 // Centered horizontal mode tabs — rendered above main content
 function modeCenterTabsHtml() {
+    if (isFlow2Active()) return '';
     return `
         <div class="mode-tabs-center">
             <button class="mode-tab-btn ${state.mode === 'casino' ? 'active' : ''}" onclick="switchMode('casino')">\ud83c\udfb0 Casino</button>
@@ -953,25 +1514,29 @@ function renderScreen() {
             // --- KINGDOM HOME (in-place map) ---
             const curRegion = state.regions[state.currentRegionIdx];
             const theme = KINGDOM_MAP_THEMES[curRegion.id] || KINGDOM_MAP_THEMES.home;
-            const nextRegion = state.currentRegionIdx < state.regions.length - 1 ? state.regions[state.currentRegionIdx + 1] : null;
-            const prevRegion = state.currentRegionIdx > 0 ? state.regions[state.currentRegionIdx - 1] : null;
-            const mapHTML = renderKingdomMapNodes(curRegion, state.currentRegionIdx, theme);
+            if (isFlow2Active()) {
+                html = renderFlow2KingdomHome(curRegion, theme);
+            } else {
+                const nextRegion = state.currentRegionIdx < state.regions.length - 1 ? state.regions[state.currentRegionIdx + 1] : null;
+                const prevRegion = state.currentRegionIdx > 0 ? state.regions[state.currentRegionIdx - 1] : null;
+                const mapHTML = renderKingdomMapNodes(curRegion, state.currentRegionIdx, theme);
 
-            html = `
-                <div class="screen active map-screen" style="background-color: ${theme.bg};">
-                    ${modeCenterTabsHtml()}
-                    <div class="map-region-nav">
-                        ${prevRegion && prevRegion.unlocked
-                    ? `<button class="map-nav-arrow" onclick="travelToRegion(${state.currentRegionIdx - 1})">&#9664;</button>`
-                    : `<button class="map-nav-arrow invisible">&#9664;</button>`}
-                        <div class="region-title">${curRegion.name}</div>
-                        ${nextRegion && nextRegion.unlocked
-                    ? `<button class="map-nav-arrow" onclick="travelToRegion(${state.currentRegionIdx + 1})">&#9654;</button>`
-                    : `<button class="map-nav-arrow invisible">&#9654;</button>`}
+                html = `
+                    <div class="screen active map-screen" style="background-color: ${theme.bg};">
+                        ${modeCenterTabsHtml()}
+                        <div class="map-region-nav">
+                            ${prevRegion && prevRegion.unlocked
+                        ? `<button class="map-nav-arrow" onclick="travelToRegion(${state.currentRegionIdx - 1})">&#9664;</button>`
+                        : `<button class="map-nav-arrow invisible">&#9664;</button>`}
+                            <div class="region-title">${curRegion.name}</div>
+                            ${nextRegion && nextRegion.unlocked
+                        ? `<button class="map-nav-arrow" onclick="travelToRegion(${state.currentRegionIdx + 1})">&#9654;</button>`
+                        : `<button class="map-nav-arrow invisible">&#9654;</button>`}
+                        </div>
+                        <div class="map-nodes">${mapHTML}</div>
                     </div>
-                    <div class="map-nodes">${mapHTML}</div>
-                </div>
-            `;
+                `;
+            }
         }
     } else if (state.screen === 'casino-slot') {
         const m = state.casinoMachines[state.selectedMachine];
@@ -1024,144 +1589,152 @@ function renderScreen() {
         `;
     } else if (state.screen === 'kingdom-slot') {
         const curRegion = state.regions[state.currentRegionIdx];
-        const activeNode = getRegionCurrentNode(curRegion);
-        const regionCleared = isRegionCleared(curRegion);
-        const theme = KINGDOM_SLOT_THEMES[curRegion.id] || KINGDOM_SLOT_THEMES.home;
-        const missionBoardHTML = renderNodeMissionBoard(state.currentRegionIdx, activeNode);
-        const missionStats = getNodeMissionStats(state.currentRegionIdx, activeNode);
-        const isBoss = (activeNode === curRegion.nodes);
-        const headerColor = isBoss ? '#ef4444' : theme.accent;
-        const headerText = regionCleared
-            ? 'REGION CLEARED'
-            : `${isBoss ? '☠️ BOSS · ' : ''}${missionStats.completedCount} / ${missionStats.total} MISSIONS`;
+        if (isFlow2Active()) {
+            html = renderFlow2KingdomSlot(curRegion);
+        } else {
+            const activeNode = getRegionCurrentNode(curRegion);
+            const regionCleared = isRegionCleared(curRegion);
+            const theme = KINGDOM_SLOT_THEMES[curRegion.id] || KINGDOM_SLOT_THEMES.home;
+            const missionBoardHTML = renderNodeMissionBoard(state.currentRegionIdx, activeNode);
+            const missionStats = getNodeMissionStats(state.currentRegionIdx, activeNode);
+            const isBoss = (activeNode === curRegion.nodes);
+            const headerColor = isBoss ? '#ef4444' : theme.accent;
+            const headerText = regionCleared
+                ? 'REGION CLEARED'
+                : `${isBoss ? '☠️ BOSS · ' : ''}${missionStats.completedCount} / ${missionStats.total} MISSIONS`;
 
-        html = `
-            <div class="screen active slot-screen">
-                <div class="slot-header" style="background: rgba(0,0,0,0.8);">
-                    <button class="back-btn" onclick="switchScreen('home')">◀ BACK</button>
-                    <div class="slot-region-tag" style="color: ${theme.accent};">${curRegion.name}</div>
-                    <div class="slot-header-content" style="color: ${headerColor};">${headerText}</div>
-                </div>
-                <div class="slot-reels-container kingdom-slot-layout">
-                    <div class="kingdom-slot-main">
-                        <div class="kingdom-slot-machine" id="kingdom-slot-machine" style="--slot-accent: ${theme.reelBorder}; --slot-glow: ${theme.reelGlow};">
-                            <div class="k-reel"></div>
-                            <div class="k-reel"></div>
-                            <div class="k-reel"></div>
-                            <div class="k-reel"></div>
-                            <div class="k-reel"></div>
-                        </div>
-
-                        <div class="bet-controls">
-                            <button onclick="changeBet(-500)">-</button>
-                            <div class="bet-amount">500</div>
-                            <button onclick="changeBet(500)">+</button>
-                        </div>
-
-                        <button id="kingdom-spin-btn" class="spin-btn" style="background: linear-gradient(to bottom, ${theme.accent}, ${theme.accent}aa); border-color: ${theme.accent}; box-shadow: 0 10px 0 ${theme.accent}55, 0 15px 20px rgba(0,0,0,0.6);" ${regionCleared ? 'disabled' : 'onclick="spinKingdomSlot()"'} ${state.kingdomSpinBusy ? 'disabled' : ''}>${regionCleared ? 'CLEARED' : 'SPIN'}</button>
+            html = `
+                <div class="screen active slot-screen">
+                    <div class="slot-header" style="background: rgba(0,0,0,0.8);">
+                        <button class="back-btn" onclick="switchScreen('home')">◀ BACK</button>
+                        <div class="slot-region-tag" style="color: ${theme.accent};">${curRegion.name}</div>
+                        <div class="slot-header-content" style="color: ${headerColor};">${headerText}</div>
                     </div>
-
-                    <aside class="kingdom-slot-side">
-                        ${missionBoardHTML}
-                    </aside>
-                </div>
-            </div>
-        `;
-    } else if (state.screen === 'castle') {
-        const unlockedCastleIdxs = getUnlockedCastleIndexes();
-        if (!unlockedCastleIdxs.includes(state.buildingRegionIdx)) {
-            state.buildingRegionIdx = getDefaultBuildingRegionIdx();
-        }
-
-        const curRegion = state.regions[state.buildingRegionIdx];
-        const castle = curRegion.castle;
-        const totalLevels = castle.slots.reduce((sum, slot) => sum + slot.maxLevel, 0);
-        const builtLevels = castle.slots.reduce((sum, slot) => sum + slot.level, 0);
-        const completionPct = totalLevels === 0 ? 0 : Math.round((builtLevels / totalLevels) * 100);
-        const completed = isCastleCompleted(castle);
-        const prevRegionIdx = state.buildingRegionIdx > 0 ? state.buildingRegionIdx - 1 : null;
-        const nextRegionIdx = state.buildingRegionIdx < state.regions.length - 1 ? state.buildingRegionIdx + 1 : null;
-        const regionLabel = curRegion.name.replace(/^[^\s]+\s/, '');
-        const lockInstruction = getCastleUnlockHint(state.buildingRegionIdx);
-
-        const buildHtml = castle.slots.map((slot, idx) => {
-            const isMax = slot.level >= slot.maxLevel;
-            const upgradeCost = isMax ? 0 : getSlotUpgradeCost(slot);
-            const canBuild = state.crowns >= upgradeCost;
-            const stateIcon = isMax ? '✅' : (canBuild ? '⚒️' : '🔒');
-            const actionAttr = isMax ? 'disabled' : `onclick="upgradeCastleSlot(${idx})"`;
-            const visual = slot.visuals[Math.min(slot.level, slot.visuals.length - 1)];
-            const cls = [
-                'build-obj',
-                'castle-plot',
-                isMax ? 'built' : '',
-                (!isMax && !canBuild) ? 'insufficient' : ''
-            ].filter(Boolean).join(' ');
-            const chip = isMax ? 'MAX' : `👑 ${upgradeCost}`;
-            return `
-                <button class="${cls}" ${actionAttr}>
-                    <div class="build-state">${stateIcon}</div>
-                    <div class="castle-plot-id">#${idx + 1}</div>
-                    <div class="build-obj-icon">${visual}</div>
-                    <div class="castle-slot-name">${slot.name}</div>
-                    <div class="castle-slot-level">LV ${slot.level}/${slot.maxLevel}</div>
-                    <div class="build-cost-chip">${chip}</div>
-                </button>
-            `;
-        }).join('');
-        const canClaimBonus = castle.unlocked && completed && !castle.completionClaimed;
-        const bonusStateClass = !castle.unlocked
-            ? 'locked'
-            : (castle.completionClaimed ? 'claimed' : (canClaimBonus ? 'claimable' : 'pending'));
-        const bonusControl = canClaimBonus
-            ? `<button class="castle-bonus-claim-btn" onclick="claimCastleCompletionBonus()" aria-label="Claim completion bonus">🎁</button>`
-            : `<div class="castle-bonus-icon" aria-hidden="true">${!castle.unlocked ? '🔒' : (castle.completionClaimed ? '✓' : '•')}</div>`;
-
-        html = `
-            <div class="screen active castle-bg">
-                <div class="castle-shell ${completed ? 'castle-shell-completed' : ''}">
-                    <div class="castle-topbar">
-                        <div class="castle-top-side castle-top-left">
-                            <button class="castle-ui-btn castle-home-btn" onclick="switchScreen('home')" aria-label="Back to Home">⌂</button>
-                            <button class="castle-ui-btn" ${prevRegionIdx !== null ? `onclick="switchBuildingRegion(${prevRegionIdx})"` : 'disabled'} aria-label="Previous Castle">◀</button>
-                        </div>
-                        <div class="castle-top-center-cluster">
-                            <div class="castle-pill-row">
-                                <div class="castle-region-pill">${curRegion.icon || '🏰'} ${regionLabel}</div>
+                    <div class="slot-reels-container kingdom-slot-layout">
+                        <div class="kingdom-slot-main">
+                            <div class="kingdom-slot-machine" id="kingdom-slot-machine" style="--slot-accent: ${theme.reelBorder}; --slot-glow: ${theme.reelGlow};">
+                                <div class="k-reel"></div>
+                                <div class="k-reel"></div>
+                                <div class="k-reel"></div>
+                                <div class="k-reel"></div>
+                                <div class="k-reel"></div>
                             </div>
-                            <div class="castle-bonus-row">
-                                <div class="castle-progress-wheel castle-progress-wheel-mini" style="--pct:${completionPct}">
-                                    <span>🏰</span>
+
+                            <div class="bet-controls">
+                                <button onclick="changeBet(-500)">-</button>
+                                <div class="bet-amount">500</div>
+                                <button onclick="changeBet(500)">+</button>
+                            </div>
+
+                            <button id="kingdom-spin-btn" class="spin-btn" style="background: linear-gradient(to bottom, ${theme.accent}, ${theme.accent}aa); border-color: ${theme.accent}; box-shadow: 0 10px 0 ${theme.accent}55, 0 15px 20px rgba(0,0,0,0.6);" ${regionCleared ? 'disabled' : 'onclick="spinKingdomSlot()"'} ${state.kingdomSpinBusy ? 'disabled' : ''}>${regionCleared ? 'CLEARED' : 'SPIN'}</button>
+                        </div>
+
+                        <aside class="kingdom-slot-side">
+                            ${missionBoardHTML}
+                        </aside>
+                    </div>
+                </div>
+            `;
+        }
+    } else if (state.screen === 'castle') {
+        if (isFlow2Active()) {
+            html = renderFlow2CastleScreen(state.regions[state.currentRegionIdx]);
+        } else {
+            const unlockedCastleIdxs = getUnlockedCastleIndexes();
+            if (!unlockedCastleIdxs.includes(state.buildingRegionIdx)) {
+                state.buildingRegionIdx = getDefaultBuildingRegionIdx();
+            }
+
+            const curRegion = state.regions[state.buildingRegionIdx];
+            const castle = curRegion.castle;
+            const totalLevels = castle.slots.reduce((sum, slot) => sum + slot.maxLevel, 0);
+            const builtLevels = castle.slots.reduce((sum, slot) => sum + slot.level, 0);
+            const completionPct = totalLevels === 0 ? 0 : Math.round((builtLevels / totalLevels) * 100);
+            const completed = isCastleCompleted(castle);
+            const prevRegionIdx = state.buildingRegionIdx > 0 ? state.buildingRegionIdx - 1 : null;
+            const nextRegionIdx = state.buildingRegionIdx < state.regions.length - 1 ? state.buildingRegionIdx + 1 : null;
+            const regionLabel = curRegion.name.replace(/^[^\s]+\s/, '');
+            const lockInstruction = getCastleUnlockHint(state.buildingRegionIdx);
+
+            const buildHtml = castle.slots.map((slot, idx) => {
+                const isMax = slot.level >= slot.maxLevel;
+                const upgradeCost = isMax ? 0 : getSlotUpgradeCost(slot);
+                const canBuild = state.crowns >= upgradeCost;
+                const stateIcon = isMax ? '✅' : (canBuild ? '⚒️' : '🔒');
+                const actionAttr = isMax ? 'disabled' : `onclick="upgradeCastleSlot(${idx})"`;
+                const visual = slot.visuals[Math.min(slot.level, slot.visuals.length - 1)];
+                const cls = [
+                    'build-obj',
+                    'castle-plot',
+                    isMax ? 'built' : '',
+                    (!isMax && !canBuild) ? 'insufficient' : ''
+                ].filter(Boolean).join(' ');
+                const chip = isMax ? 'MAX' : `👑 ${upgradeCost}`;
+                return `
+                    <button class="${cls}" ${actionAttr}>
+                        <div class="build-state">${stateIcon}</div>
+                        <div class="castle-plot-id">#${idx + 1}</div>
+                        <div class="build-obj-icon">${visual}</div>
+                        <div class="castle-slot-name">${slot.name}</div>
+                        <div class="castle-slot-level">LV ${slot.level}/${slot.maxLevel}</div>
+                        <div class="build-cost-chip">${chip}</div>
+                    </button>
+                `;
+            }).join('');
+            const canClaimBonus = castle.unlocked && completed && !castle.completionClaimed;
+            const bonusStateClass = !castle.unlocked
+                ? 'locked'
+                : (castle.completionClaimed ? 'claimed' : (canClaimBonus ? 'claimable' : 'pending'));
+            const bonusControl = canClaimBonus
+                ? `<button class="castle-bonus-claim-btn" onclick="claimCastleCompletionBonus()" aria-label="Claim completion bonus">🎁</button>`
+                : `<div class="castle-bonus-icon" aria-hidden="true">${!castle.unlocked ? '🔒' : (castle.completionClaimed ? '✓' : '•')}</div>`;
+
+            html = `
+                <div class="screen active castle-bg">
+                    <div class="castle-shell ${completed ? 'castle-shell-completed' : ''}">
+                        <div class="castle-topbar">
+                            <div class="castle-top-side castle-top-left">
+                                <button class="castle-ui-btn castle-home-btn" onclick="switchScreen('home')" aria-label="Back to Home">⌂</button>
+                                <button class="castle-ui-btn" ${prevRegionIdx !== null ? `onclick="switchBuildingRegion(${prevRegionIdx})"` : 'disabled'} aria-label="Previous Castle">◀</button>
+                            </div>
+                            <div class="castle-top-center-cluster">
+                                <div class="castle-pill-row">
+                                    <div class="castle-region-pill">${curRegion.icon || '🏰'} ${regionLabel}</div>
                                 </div>
-                                <div class="castle-bonus-card castle-bonus-card-floating ${bonusStateClass}">
-                                    <div class="castle-bonus-value">🎁 🪙 ${CASTLE_COMPLETION_BONUS.coins.toLocaleString()}  👑 ${CASTLE_COMPLETION_BONUS.crowns}</div>
-                                    <div class="castle-bonus-meta">
-                                        ${bonusControl}
+                                <div class="castle-bonus-row">
+                                    <div class="castle-progress-wheel castle-progress-wheel-mini" style="--pct:${completionPct}">
+                                        <span>🏰</span>
+                                    </div>
+                                    <div class="castle-bonus-card castle-bonus-card-floating ${bonusStateClass}">
+                                        <div class="castle-bonus-value">🎁 🪙 ${CASTLE_COMPLETION_BONUS.coins.toLocaleString()}  👑 ${CASTLE_COMPLETION_BONUS.crowns}</div>
+                                        <div class="castle-bonus-meta">
+                                            ${bonusControl}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+                            <div class="castle-top-side castle-top-right">
+                                <button class="castle-ui-btn" ${nextRegionIdx !== null ? `onclick="switchBuildingRegion(${nextRegionIdx})"` : 'disabled'} aria-label="Next Castle">▶</button>
+                            </div>
                         </div>
-                        <div class="castle-top-side castle-top-right">
-                            <button class="castle-ui-btn" ${nextRegionIdx !== null ? `onclick="switchBuildingRegion(${nextRegionIdx})"` : 'disabled'} aria-label="Next Castle">▶</button>
-                        </div>
-                    </div>
 
-                    ${castle.unlocked
-                ? `
-                            <div class="build-objects-container castle-plot-grid ${completed ? 'castle-plot-grid-completed' : ''}">
-                                ${buildHtml}
-                            </div>
-                        `
-                : `
-                            <div class="castle-lock-panel">
-                                <div class="castle-lock-title">🔒 BUILDING LOCKED</div>
-                                <div class="castle-lock-note">${lockInstruction}</div>
-                            </div>
-                        `
-            }
+                        ${castle.unlocked
+                    ? `
+                                <div class="build-objects-container castle-plot-grid ${completed ? 'castle-plot-grid-completed' : ''}">
+                                    ${buildHtml}
+                                </div>
+                            `
+                    : `
+                                <div class="castle-lock-panel">
+                                    <div class="castle-lock-title">🔒 BUILDING LOCKED</div>
+                                    <div class="castle-lock-note">${lockInstruction}</div>
+                                </div>
+                            `
+                }
+                    </div>
                 </div>
-            </div>
-        `;
+            `;
+        }
     }
 
     els.mainContent.innerHTML = html;
@@ -1187,6 +1760,10 @@ function updateTabs() {
 // --- ACTIONS & INTERACTIONS ---
 
 function switchMode(newMode) {
+    if (isFlow2Active() && newMode !== 'kingdom') {
+        showToast('Flow 2 stays in Kingdom mode.');
+        return;
+    }
     if (state.mode === newMode && state.screen === 'home') return;
 
     state.mode = newMode;
@@ -1212,6 +1789,10 @@ function switchMode(newMode) {
 }
 
 function switchScreen(newScreen) {
+    if (isFlow2Active() && !['home', 'kingdom-slot', 'castle'].includes(newScreen)) {
+        showToast('This screen is not available in Flow 2.');
+        return;
+    }
     const goingBack = (newScreen === 'home');
 
     // Out: zoom out (going deeper) or zoom in (going back)
@@ -1221,10 +1802,11 @@ function switchScreen(newScreen) {
 
     setTimeout(() => {
         if (newScreen === 'castle') {
-            state.buildingRegionIdx = getDefaultBuildingRegionIdx();
+            state.buildingRegionIdx = isFlow2Active() ? state.currentRegionIdx : getDefaultBuildingRegionIdx();
         }
         state.screen = newScreen;
         closePanels();
+        renderTopBar();
         renderScreen();
         // In: opposite direction
         els.mainContent.style.transition = 'none';
@@ -1240,6 +1822,10 @@ function switchScreen(newScreen) {
 function toggleUniversalPanel() {
     state.universalOpen = !state.universalOpen;
     if (!state.universalOpen) { closePanels(); return; }
+    if (isFlow2Active()) {
+        getFlow2State().universalNotif = false;
+        renderTopBar();
+    }
 
     const H = 560;
     const nodeSpacing = 220;
@@ -1378,10 +1964,19 @@ function onUniversalRegionClick(idx) {
 }
 
 function travelToRegion(idx) {
+    if (isFlow2Active()) {
+        const flow2 = getFlow2State();
+        flow2.taskPanelOpen = false;
+        flow2.mustBuildBeforeNextNode = false;
+        flow2.areaCompleteShown = false;
+        flow2.step = 'flow2_area_map_ready';
+    }
     state.currentRegionIdx = idx;
+    state.buildingRegionIdx = idx;
     state.mode = 'kingdom';
     state.screen = 'home';
     closePanels();
+    renderTopBar();
     renderScreen();
 }
 
@@ -1413,14 +2008,15 @@ function switchBuildingRegion(idx) {
     renderScreen();
 }
 
-function closePanels() {
+function closePanels(force = false) {
+    if (state.popupLocked && !force) return;
     state.universalOpen = false;
     els.overlay.classList.add('hidden');
     els.universalPanel.classList.add('hidden');
-    closePopup();
+    closePopup(force);
 }
 
-els.overlay.addEventListener('click', closePanels);
+els.overlay.addEventListener('click', () => closePanels());
 
 // Casino carousel swipe support
 let _touchStartX = 0;
@@ -1510,6 +2106,19 @@ function claimChest(chestIdx) {
     state.coins += chest.reward.coins;
     state.crowns += chest.reward.crowns;
 
+    if (isFlow2Active()) {
+        const flow2 = getFlow2State();
+        if (isFlow2TutorialActive()) {
+            flow2.taskPanelOpen = true;
+            flow2.mustBuildBeforeNextNode = true;
+            setFlow2Step('flow2_claim_chest_guided');
+        } else {
+            flow2.taskPanelOpen = false;
+            flow2.mustBuildBeforeNextNode = false;
+            setFlow2Step('flow2_chest_claimed_optional');
+        }
+    }
+
     renderTopBar();
     renderScreen();
 
@@ -1519,6 +2128,7 @@ function claimChest(chestIdx) {
 }
 
 function showPopup(title, msg, onContinueStr = "closePopup()", isBoss = false) {
+    state.popupLocked = false;
     let border = isBoss ? '#ef4444' : 'var(--gold)';
     els.popup.innerHTML = `
         <h2 style="color: ${border}">${title}</h2>
@@ -1536,7 +2146,9 @@ function showPopup(title, msg, onContinueStr = "closePopup()", isBoss = false) {
     els.popup.classList.add('show');
 }
 
-function closePopup() {
+function closePopup(force = false) {
+    if (state.popupLocked && !force) return;
+    state.popupLocked = false;
     els.popup.classList.remove('show');
     els.overlay.classList.add('hidden');
     // Add hidden back after transition ends
@@ -1654,6 +2266,46 @@ function spinKingdomSlot() {
     state.kingdomSpinBusy = true;
     const spinButton = document.getElementById('kingdom-spin-btn');
     if (spinButton) spinButton.disabled = true;
+
+    if (isFlow2Active()) {
+        state.kingdomSlotEngine.spin().then((symbols) => {
+            const { wonPower, wonCoins } = evaluateKingdomSpinSymbols(symbols);
+            const activeNode = getRegionCurrentNode(curRegion);
+            const isBoss = (activeNode === curRegion.nodes);
+
+            state.coins += wonCoins;
+            spawnFloatingReward(`🪙 +${wonCoins}`, window.innerWidth / 2 - 50, window.innerHeight / 2);
+            setTimeout(() => spawnFloatingReward(`⚔️ +${wonPower}`, window.innerWidth / 2 + 50, window.innerHeight / 2), 180);
+
+            curRegion.clearedNodes = Math.min(curRegion.nodes, curRegion.clearedNodes + 1);
+            renderTopBar();
+            renderScreen();
+
+            setTimeout(() => {
+                if (isBoss) {
+                    if (maybeCompleteFlow2Area()) return;
+                    setFlow2Step('area_complete_pending');
+                    showFlow2NodeClearPopup(['Boss cleared.', 'Complete the castle to finish the area.']);
+                    return;
+                }
+
+                if (activeNode === 1) {
+                    setFlow2Step('flow2_node1_cleared');
+                }
+                showFlow2NodeClearPopup(['Node cleared.', 'Your chest reward is ready.']);
+            }, 850);
+        }).catch((err) => {
+            console.error('kingdom slot spin error', err);
+            showToast('Spin failed');
+        }).finally(() => {
+            state.kingdomSpinBusy = false;
+            const btn = document.getElementById('kingdom-spin-btn');
+            if (btn && state.screen === 'kingdom-slot' && !isRegionCleared(state.regions[state.currentRegionIdx])) {
+                btn.disabled = false;
+            }
+        });
+        return;
+    }
 
     state.kingdomSlotEngine.spin().then((symbols) => {
         const { wonPower, wonCoins } = evaluateKingdomSpinSymbols(symbols);
@@ -1794,7 +2446,46 @@ function claimCastleCompletionBonus() {
     );
 }
 
-// Initial Render
-updateTabs();
-renderTopBar();
-renderScreen();
+function startGame(flowId) {
+    currentFlow = flowId;
+    state = getInitialState();
+
+    if (flowId === 2) {
+        state.coins = 35000;
+        state.crowns = 0;
+        state.mode = 'kingdom';
+        state.screen = 'home';
+        state.currentRegionIdx = 0;
+        state.buildingRegionIdx = 0;
+        state.flow2 = createFlow2State();
+        state.flow2.active = true;
+        state.flow2.step = 'flow2_area_map_ready';
+    }
+
+    document.getElementById('current-flow-text').textContent = `Flow ${flowId}`;
+    
+    document.getElementById('flow-selection-screen').classList.add('hidden');
+    document.getElementById('flow-indicator').classList.remove('hidden');
+    document.getElementById('game-container').classList.remove('hidden');
+
+    updateTabs();
+    renderTopBar();
+    renderScreen();
+
+}
+
+function goBackToFlowSelection() {
+    currentFlow = 1;
+    state.popupLocked = false;
+    state.universalOpen = false;
+    if (state.flow2) {
+        state.flow2.taskPanelOpen = false;
+    }
+    els.overlay.classList.add('hidden');
+    els.universalPanel.classList.add('hidden');
+    els.popup.classList.remove('show');
+    els.popup.classList.add('hidden');
+    document.getElementById('game-container').classList.add('hidden');
+    document.getElementById('flow-indicator').classList.add('hidden');
+    document.getElementById('flow-selection-screen').classList.remove('hidden');
+}
