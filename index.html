@@ -10,7 +10,22 @@
 </head>
 
 <body>
-    <div id="game-container">
+    <!-- FLOW SELECTION SCREEN -->
+    <div id="flow-selection-screen" class="flow-selection">
+        <h1>Select Game Flow</h1>
+        <div class="flow-buttons">
+            <button class="flow-btn" onclick="startGame(1)">Flow 1 (Ref: Coin Master)</button>
+            <button class="flow-btn" onclick="startGame(2)">Flow 2 (Ref: Royal Match)</button>
+        </div>
+    </div>
+
+    <!-- FLOW INDICATOR -->
+    <div id="flow-indicator" class="flow-indicator hidden">
+        <span id="current-flow-text">Flow 1</span>
+        <button class="flow-back-btn" onclick="goBackToFlowSelection()">« Back</button>
+    </div>
+
+    <div id="game-container" class="hidden">
         <!-- TOP BAR -->
         <header id="top-bar">
             <div class="top-bar-left">
