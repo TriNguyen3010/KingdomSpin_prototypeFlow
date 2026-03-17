@@ -24,9 +24,110 @@ const FLOW2_CASTLE_MISSIONS = [
     { id: 'build_castle', title: 'Build castle', cost: 1, visual: '🏰' },
     { id: 'build_fountain', title: 'Build the fountain', cost: 1, visual: '⛲' }
 ];
+const FLOW2_SPIN_TARGET_LABELS = {
+    crown: 'Crown',
+    shield: 'Shield',
+    sword: 'Sword',
+    gem: 'Gem',
+    leaf: 'Leaf',
+    hammer: 'Hammer',
+    helm: 'Helmet'
+};
+const FLOW2_SPIN_MISSION_PRESETS = {
+    0: {
+        1: ['shield', 'hammer'],
+        2: ['crown', 'sword', 'gem'],
+        3: ['crown', 'shield', 'helm', 'leaf']
+    }
+};
+const SCRIPTED_FLOW_CONFIGS = {
+    2: {
+        id: 2,
+        label: 'Flow 2',
+        refLabel: 'Royal Match',
+        startCoins: 35000,
+        startCrowns: 0,
+        kingdomOnly: true,
+        showModeTabs: false,
+        defaultMode: 'kingdom',
+        defaultScreen: 'home',
+        castleMissions: FLOW2_CASTLE_MISSIONS,
+        spinTargetLabels: FLOW2_SPIN_TARGET_LABELS,
+        spinMissionPresets: FLOW2_SPIN_MISSION_PRESETS
+    },
+    3: {
+        id: 3,
+        label: 'Flow 3',
+        refLabel: 'Clone of Flow 2',
+        startCoins: 35000,
+        startCrowns: 0,
+        kingdomOnly: false,
+        showModeTabs: true,
+        defaultMode: 'casino',
+        defaultScreen: 'home',
+        castleMissions: FLOW2_CASTLE_MISSIONS,
+        spinTargetLabels: FLOW2_SPIN_TARGET_LABELS,
+        spinMissionPresets: FLOW2_SPIN_MISSION_PRESETS
+    }
+};
 
-function createFlow2CastleMissions() {
-    return FLOW2_CASTLE_MISSIONS.map((mission, idx) => ({
+function getScriptedFlowKey(flowId = currentFlow) {
+    if (flowId === 2) return 'flow2';
+    if (flowId === 3) return 'flow3';
+    return null;
+}
+
+function isScriptedFlowId(flowId = currentFlow) {
+    return getScriptedFlowKey(flowId) !== null;
+}
+
+function getScriptedFlowConfig(flowId = currentFlow) {
+    return SCRIPTED_FLOW_CONFIGS[flowId] || null;
+}
+
+function getCurrentFlowLabel(flowId = currentFlow) {
+    return getScriptedFlowConfig(flowId)?.label || `Flow ${flowId}`;
+}
+
+function getActiveFlowConfig() {
+    return getScriptedFlowConfig(currentFlow);
+}
+
+function isKingdomOnlyFlow() {
+    return !!getActiveFlowConfig()?.kingdomOnly;
+}
+
+function shouldShowModeTabs() {
+    const activeFlowConfig = getActiveFlowConfig();
+    if (activeFlowConfig) return !!activeFlowConfig.showModeTabs;
+    return true;
+}
+
+function canUseCasinoMode() {
+    const activeFlowConfig = getActiveFlowConfig();
+    if (activeFlowConfig) return !activeFlowConfig.kingdomOnly;
+    return true;
+}
+
+function isFlow3Active() {
+    return currentFlow === 3 && !!getFlow2State()?.active;
+}
+
+function shouldShowFlow3TutorialArrows() {
+    return isFlow3Active() && isFlow2TutorialActive();
+}
+
+function getAllowedScriptedFlowScreens() {
+    if (!isFlow2Active()) return ['home', 'casino-slot', 'kingdom-slot', 'castle'];
+
+    const allowedScreens = ['home', 'kingdom-slot', 'castle'];
+    if (canUseCasinoMode()) allowedScreens.push('casino-slot');
+    return allowedScreens;
+}
+
+function createFlow2CastleMissions(flowId = currentFlow) {
+    const castleMissions = getScriptedFlowConfig(flowId)?.castleMissions || FLOW2_CASTLE_MISSIONS;
+    return castleMissions.map((mission, idx) => ({
         ...mission,
         status: idx === 0 ? FLOW2_CASTLE_TASK_STATUS.ACTIVE : FLOW2_CASTLE_TASK_STATUS.LOCKED
     }));
@@ -80,7 +181,8 @@ function createInitialRegions() {
             castle,
             chests: createRegionChests(idx, region.nodes),
             nodeMissions: {},
-            flow2CastleMissions: createFlow2CastleMissions()
+            flow2CastleMissions: createFlow2CastleMissions(),
+            flow2SpinMissions: {}
         };
     });
 }
@@ -138,7 +240,7 @@ function getDefaultBuildingRegionIdx() {
     return unlocked.length > 0 ? unlocked[0] : 0;
 }
 
-function createFlow2State() {
+function createScriptedFlowState() {
     return {
         active: false,
         step: null,
@@ -151,8 +253,15 @@ function createFlow2State() {
             1: false,
             2: false
         },
-        areaCompleteShown: false
+        areaCompleteShown: false,
+        lastSpinHitTargetIds: [],
+        castleAutoBuildPending: false,
+        castleAutoBuilding: false
     };
+}
+
+function createFlow2State() {
+    return createScriptedFlowState();
 }
 
 // State Management
@@ -192,39 +301,185 @@ function getInitialState() {
             { name: 'Dark Magic', icon: '🔮', unlockLevel: 15, color: '#a855f7', rarity: 'Legendary' },
             { name: 'Star Realm', icon: '⭐', unlockLevel: 18, color: '#f97316', rarity: 'Mythic' }
         ],
-        flow2: createFlow2State()
+        flow2: createScriptedFlowState(),
+        flow3: createScriptedFlowState()
     };
 }
 
-let state = getInitialState();
 let currentFlow = 1;
+let state = getInitialState();
 
 function isFlow2Active() {
-    return currentFlow === 2 && !!state.flow2?.active;
+    return isScriptedFlowId() && !!getFlow2State()?.active;
 }
 
 function getFlow2State() {
-    if (!state.flow2) state.flow2 = createFlow2State();
-    return state.flow2;
+    const stateKey = getScriptedFlowKey();
+    if (!stateKey) return null;
+    if (!state[stateKey]) state[stateKey] = createScriptedFlowState();
+    return state[stateKey];
 }
 
 function isFlow2TutorialActive() {
-    return isFlow2Active() && !getFlow2State().tutorialComplete;
+    const scriptedState = getFlow2State();
+    return isFlow2Active() && !!scriptedState && !scriptedState.tutorialComplete;
 }
 
 function setFlow2Step(step) {
-    if (!isFlow2Active()) return;
-    state.flow2.step = step;
+    const scriptedState = getFlow2State();
+    if (!isFlow2Active() || !scriptedState) return;
+    scriptedState.step = step;
 }
 
 function getFlow2CurrentRegion() {
     return state.regions[state.currentRegionIdx];
 }
 
+function getFlow2SymbolLabel(symbol) {
+    const labels = getScriptedFlowConfig()?.spinTargetLabels || FLOW2_SPIN_TARGET_LABELS;
+    return labels[symbol] || symbol;
+}
+
+function getFlow2SpinTargetCount(region, nodeNum) {
+    if (!region) return 0;
+
+    const safeNode = Math.max(1, Math.min(nodeNum, region.nodes));
+    if (safeNode === 1) return 2;
+    if (safeNode === region.nodes) return 4;
+    return 3;
+}
+
+function getFlow2SpinTargetSymbols(regionIdx, nodeNum) {
+    const region = state.regions[regionIdx];
+    if (!region) return [];
+
+    const safeNode = Math.max(1, Math.min(nodeNum, region.nodes));
+    const spinMissionPresets = getScriptedFlowConfig()?.spinMissionPresets || FLOW2_SPIN_MISSION_PRESETS;
+    const presetTargets = spinMissionPresets?.[regionIdx]?.[safeNode];
+    if (Array.isArray(presetTargets) && presetTargets.length > 0) {
+        return [...new Set(presetTargets)];
+    }
+
+    const targetCount = getFlow2SpinTargetCount(region, safeNode);
+    const baseOffset = (((regionIdx + 1) * 2) + safeNode) % KINGDOM_SLOT_SYMBOLS.length;
+    const rotatedPool = [
+        ...KINGDOM_SLOT_SYMBOLS.slice(baseOffset),
+        ...KINGDOM_SLOT_SYMBOLS.slice(0, baseOffset)
+    ];
+
+    return rotatedPool.slice(0, targetCount);
+}
+
+function createFlow2SpinMission(regionIdx, nodeNum) {
+    const region = state.regions[regionIdx];
+    if (!region) return null;
+
+    const safeNode = Math.max(1, Math.min(nodeNum, region.nodes));
+    const targets = getFlow2SpinTargetSymbols(regionIdx, safeNode).map((symbol, idx) => ({
+        id: `f2r${regionIdx + 1}n${safeNode}_${symbol}_${idx + 1}`,
+        symbol,
+        label: getFlow2SymbolLabel(symbol),
+        hit: false,
+        hitOrder: null
+    }));
+
+    return {
+        id: `flow2_spin_r${regionIdx + 1}_n${safeNode}`,
+        nodeNum: safeNode,
+        spinCount: 0,
+        completed: false,
+        targets
+    };
+}
+
+function ensureFlow2SpinMission(regionIdx, nodeNum) {
+    const region = state.regions[regionIdx];
+    if (!region) return null;
+
+    const safeNode = Math.max(1, Math.min(nodeNum, region.nodes));
+    if (!region.flow2SpinMissions || typeof region.flow2SpinMissions !== 'object') {
+        region.flow2SpinMissions = {};
+    }
+
+    const missionKey = String(safeNode);
+    if (!region.flow2SpinMissions[missionKey]) {
+        region.flow2SpinMissions[missionKey] = createFlow2SpinMission(regionIdx, safeNode);
+    }
+
+    const mission = region.flow2SpinMissions[missionKey];
+    const hitCount = mission.targets.filter((target) => target.hit).length;
+    mission.completed = mission.targets.length > 0 && hitCount >= mission.targets.length;
+    return mission;
+}
+
+function getFlow2SpinMissionStats(regionIdx, nodeNum) {
+    const mission = ensureFlow2SpinMission(regionIdx, nodeNum);
+    if (!mission) {
+        return {
+            mission: null,
+            hitCount: 0,
+            total: 0
+        };
+    }
+
+    return {
+        mission,
+        hitCount: mission.targets.filter((target) => target.hit).length,
+        total: mission.targets.length
+    };
+}
+
+function applyFlow2SpinMissionResult(regionIdx, nodeNum, symbolGrid) {
+    const mission = ensureFlow2SpinMission(regionIdx, nodeNum);
+    if (!mission) {
+        return {
+            mission: null,
+            newlyHitTargets: [],
+            hitCount: 0,
+            total: 0,
+            completed: false
+        };
+    }
+
+    const visibleSymbols = new Set(
+        (Array.isArray(symbolGrid) ? symbolGrid.flat() : []).filter(Boolean)
+    );
+    const newlyHitTargets = [];
+
+    mission.spinCount = Math.max(0, Number(mission.spinCount) || 0) + 1;
+    mission.targets.forEach((target) => {
+        if (target.hit || !visibleSymbols.has(target.symbol)) return;
+        target.hit = true;
+        target.hitOrder = mission.spinCount;
+        newlyHitTargets.push(target);
+    });
+
+    const hitCount = mission.targets.filter((target) => target.hit).length;
+    mission.completed = mission.targets.length > 0 && hitCount >= mission.targets.length;
+
+    return {
+        mission,
+        newlyHitTargets,
+        hitCount,
+        total: mission.targets.length,
+        completed: mission.completed
+    };
+}
+
+function getFlow2MissionGoalText(regionIdx, nodeNum) {
+    const mission = ensureFlow2SpinMission(regionIdx, nodeNum);
+    if (!mission || mission.targets.length === 0) {
+        return 'Clear the current node.';
+    }
+
+    const targetText = mission.targets
+        .map((target) => `${KINGDOM_SLOT_SYMBOL_MAP[target.symbol] || '❔'} ${target.label}`)
+        .join(' · ');
+    return `Spin and collect: ${targetText}`;
+}
+
 function getFlow2CurrentLevelGoal(nodeNum) {
-    if (nodeNum === 1) return 'Clear the first node.';
-    if (nodeNum === 2) return 'Clear the next node.';
-    return 'Clear the boss node.';
+    return getFlow2MissionGoalText(state.currentRegionIdx, nodeNum);
 }
 
 function getFlow2LevelLabel(nodeNum) {
@@ -352,6 +607,7 @@ function handleFlow2LevelIntroPlay(nodeNum) {
     if (!isFlow2Active()) return;
     const flow2 = getFlow2State();
     flow2.shownLevelIntros[nodeNum] = true;
+    flow2.lastSpinHitTargetIds = [];
     state.popupLocked = false;
     closePopup(true);
     state.mode = 'kingdom';
@@ -364,6 +620,7 @@ function handleFlow2LevelIntroPlay(nodeNum) {
 
 function handleFlow2NodeClearContinue() {
     if (!isFlow2Active()) return;
+    getFlow2State().lastSpinHitTargetIds = [];
     state.popupLocked = false;
     closePopup(true);
     state.mode = 'kingdom';
@@ -416,6 +673,7 @@ function openFlow2TaskPanel() {
         return;
     }
     getFlow2State().taskNotif = false;
+    state.universalOpen = false;
     state.mode = 'kingdom';
     state.screen = 'home';
     getFlow2State().taskPanelOpen = true;
@@ -425,10 +683,12 @@ function openFlow2TaskPanel() {
 
 function closeFlow2TaskPanel() {
     if (!isFlow2Active()) return;
-    if (getFlow2State().step === 'flow2_castle_mission2_unlocked') {
+    const flow2 = getFlow2State();
+    if (flow2.step === 'flow2_castle_mission2_unlocked') {
         setFlow2Step('flow2_node2_ready');
     }
-    getFlow2State().taskPanelOpen = false;
+    flow2.taskPanelOpen = false;
+    closePanels(true);
     renderScreen();
 }
 
@@ -445,7 +705,10 @@ function openFlow2ActiveMission() {
         return;
     }
 
-    getFlow2State().taskPanelOpen = false;
+    const flow2 = getFlow2State();
+    flow2.taskPanelOpen = false;
+    flow2.castleAutoBuildPending = state.crowns >= activeMission.cost;
+    flow2.castleAutoBuilding = false;
     state.buildingRegionIdx = state.currentRegionIdx;
     switchScreen('castle');
 }
@@ -463,19 +726,26 @@ function maybeCompleteFlow2Area() {
     return true;
 }
 
-function buildFlow2CastleMission() {
+function performFlow2CastleMissionBuild(showInsufficientPopup = true) {
     if (!isFlow2Active()) return;
     const activeMission = getFlow2ActiveMission();
     if (!activeMission) {
         showToast('Castle already completed.');
-        return;
+        return false;
     }
 
     if (state.crowns < activeMission.cost) {
-        showPopup('🚫 NOT ENOUGH CROWNS', `Need ${activeMission.cost} crown${activeMission.cost > 1 ? 's' : ''} to ${activeMission.title.toLowerCase()}.`);
-        return;
+        if (showInsufficientPopup) {
+            showPopup('🚫 NOT ENOUGH CROWNS', `Need ${activeMission.cost} crown${activeMission.cost > 1 ? 's' : ''} to ${activeMission.title.toLowerCase()}.`);
+        }
+        return false;
     }
 
+    const completedMission = {
+        id: activeMission.id,
+        title: activeMission.title,
+        visual: activeMission.visual
+    };
     state.crowns -= activeMission.cost;
     activeMission.status = FLOW2_CASTLE_TASK_STATUS.DONE;
     const missions = getFlow2CastleMissions();
@@ -484,12 +754,14 @@ function buildFlow2CastleMission() {
 
     const flow2 = getFlow2State();
     flow2.mustBuildBeforeNextNode = false;
-    flow2.taskNotif = true;
-    flow2.taskPanelOpen = true;
+    flow2.taskNotif = !!nextMission;
+    flow2.taskPanelOpen = !!nextMission;
+    flow2.castleAutoBuildPending = false;
+    flow2.castleAutoBuilding = false;
     state.mode = 'kingdom';
     state.screen = 'home';
 
-    if (activeMission.id === 'build_castle' && nextMission?.id === 'build_fountain') {
+    if (completedMission.id === 'build_castle' && nextMission?.id === 'build_fountain') {
         flow2.tutorialComplete = true;
         setFlow2Step('flow2_castle_mission2_unlocked');
     } else if (isFlow2CastleCompleted()) {
@@ -500,10 +772,44 @@ function buildFlow2CastleMission() {
 
     renderTopBar();
     renderScreen();
-    spawnFloatingReward(`${activeMission.visual} Done`, window.innerWidth / 2, window.innerHeight / 2);
-    showToast(`${activeMission.title} complete.`);
+    spawnFloatingReward(`${completedMission.visual} Done`, window.innerWidth / 2, window.innerHeight / 2);
+    showToast(`${completedMission.title} complete.`);
 
-    if (maybeCompleteFlow2Area()) return;
+    if (maybeCompleteFlow2Area()) return true;
+    return true;
+}
+
+function buildFlow2CastleMission() {
+    return performFlow2CastleMissionBuild(true);
+}
+
+function maybeRunFlow2CastleAutoBuild() {
+    if (!isFlow2Active() || state.screen !== 'castle') return;
+    const flow2 = getFlow2State();
+    if (!flow2 || !flow2.castleAutoBuildPending || flow2.castleAutoBuilding) return;
+
+    const activeMission = getFlow2ActiveMission();
+    if (!activeMission || state.crowns < activeMission.cost) {
+        flow2.castleAutoBuildPending = false;
+        flow2.castleAutoBuilding = false;
+        return;
+    }
+
+    flow2.castleAutoBuilding = true;
+    renderScreen();
+
+    setTimeout(() => {
+        if (!isFlow2Active()) return;
+        const scriptedState = getFlow2State();
+        if (!scriptedState?.castleAutoBuilding || state.screen !== 'castle') {
+            if (scriptedState) {
+                scriptedState.castleAutoBuildPending = false;
+                scriptedState.castleAutoBuilding = false;
+            }
+            return;
+        }
+        performFlow2CastleMissionBuild(false);
+    }, 280);
 }
 
 function onFlow2NodeClick(nodeNum) {
@@ -544,10 +850,12 @@ function onFlow2NodeClick(nodeNum) {
 function renderFlow2TaskPanel() {
     if (!isFlow2Active() || !getFlow2State().taskPanelOpen) return '';
 
+    const showBuildArrow = shouldShowFlow3TutorialArrows() && getFlow2State().mustBuildBeforeNextNode;
     const missionRows = getFlow2CastleMissions().map((mission) => {
         const isActive = mission.status === FLOW2_CASTLE_TASK_STATUS.ACTIVE;
         const rowClass = `flow2-task-row ${mission.status}`;
-        const action = isActive ? `<button class="flow2-task-btn" onclick="openFlow2ActiveMission()">Build</button>` : '';
+        const actionClass = isActive && showBuildArrow ? ' flow2-target tutorial-arrow-target' : '';
+        const action = isActive ? `<button class="flow2-task-btn${actionClass}" onclick="openFlow2ActiveMission()">Build</button>` : '';
         const badge = mission.status === FLOW2_CASTLE_TASK_STATUS.DONE
             ? '<div class="flow2-task-badge done">Done</div>'
             : `<div class="flow2-task-badge ${mission.status}">${mission.status === FLOW2_CASTLE_TASK_STATUS.ACTIVE ? `Cost · 👑 ${mission.cost}` : 'Locked'}</div>`;
@@ -567,16 +875,52 @@ function renderFlow2TaskPanel() {
     }).join('');
 
     return `
-        <aside class="flow2-task-panel">
-            <div class="flow2-task-panel-head">
-                <div class="flow2-task-panel-title">Castle</div>
-                <button class="flow2-task-close" onclick="closeFlow2TaskPanel()" aria-label="Close task list">✕</button>
+        <div class="flow2-task-modal">
+            <div class="flow2-task-modal-head">
+                <div class="flow2-task-modal-copy">
+                    <div class="flow2-task-modal-kicker">Castle Tasks</div>
+                    <div class="flow2-task-modal-title">${getCurrentFlowLabel()} Kingdom Tasks</div>
+                    <div class="flow2-task-modal-sub">Finish the active build to unlock the next scripted step.</div>
+                </div>
+                <button class="flow2-task-modal-close" onclick="closeFlow2TaskPanel()" aria-label="Close task list">✕</button>
             </div>
-            <div class="flow2-task-panel-list">
-                ${missionRows}
-            </div>
-        </aside>
+            <aside class="flow2-task-panel">
+                <div class="flow2-task-panel-head">
+                    <div class="flow2-task-panel-title">Castle</div>
+                    <div class="flow2-task-panel-progress">${getFlow2CastleProgressText()}</div>
+                </div>
+                <div class="flow2-task-panel-list">
+                    ${missionRows}
+                </div>
+            </aside>
+        </div>
     `;
+}
+
+function renderFlow2TaskPanelOverlay() {
+    const taskPanelHtml = renderFlow2TaskPanel();
+    if (!taskPanelHtml) return;
+
+    els.universalPanel.className = 'slide-panel flow2-task-panel-modal';
+    els.universalPanel.innerHTML = taskPanelHtml;
+    els.overlay.classList.remove('hidden');
+    els.universalPanel.classList.remove('hidden');
+}
+
+function syncScriptedFlowOverlays() {
+    if (!isFlow2Active()) return;
+    const flow2 = getFlow2State();
+    if (!flow2) return;
+
+    if (flow2.taskPanelOpen) {
+        renderFlow2TaskPanelOverlay();
+    } else if (!state.universalOpen) {
+        els.universalPanel.className = 'slide-panel hidden';
+        els.universalPanel.innerHTML = '';
+        if (!els.popup.classList.contains('show')) {
+            els.overlay.classList.add('hidden');
+        }
+    }
 }
 
 function renderFlow2MapCastleAnchor() {
@@ -585,9 +929,13 @@ function renderFlow2MapCastleAnchor() {
         ? 'Castle completed'
         : (activeMission ? activeMission.title : 'Open castle');
     const stateClass = isFlow2CastleCompleted() ? 'done' : (activeMission ? 'active' : 'idle');
+    const shouldShowMapCastleArrow = shouldShowFlow3TutorialArrows()
+        && getFlow2State().mustBuildBeforeNextNode
+        && !getFlow2State().taskPanelOpen;
+    const targetClass = shouldShowMapCastleArrow ? ' flow2-target tutorial-arrow-target' : '';
 
     return `
-        <button class="flow2-map-castle-anchor ${stateClass}" onclick="openFlow2ActiveMission()">
+        <button class="flow2-map-castle-anchor ${stateClass}${targetClass}" onclick="openFlow2ActiveMission()">
             <div class="flow2-map-castle-icon">${isFlow2CastleCompleted() ? '🏰' : '🏯'}</div>
             <div class="flow2-map-castle-copy">
                 <div class="flow2-map-castle-title">Castle</div>
@@ -599,42 +947,79 @@ function renderFlow2MapCastleAnchor() {
 
 function renderFlow2GoalPanel(curRegion) {
     const activeNode = getRegionCurrentNode(curRegion);
+    const { mission, hitCount, total } = getFlow2SpinMissionStats(state.currentRegionIdx, activeNode);
+    const justHitIds = new Set(getFlow2State().lastSpinHitTargetIds || []);
+    const targetCards = mission?.targets?.map((target) => {
+        const hitClass = target.hit ? 'hit' : 'pending';
+        const justHitClass = justHitIds.has(target.id) ? ' just-hit' : '';
+        const statusText = target.hit ? 'Collected' : 'Pending';
+
+        return `
+            <div class="flow2-target-card ${hitClass}${justHitClass}">
+                <div class="flow2-target-icon">${KINGDOM_SLOT_SYMBOL_MAP[target.symbol] || '❔'}</div>
+                <div class="flow2-target-copy">
+                    <div class="flow2-target-title">${target.label}</div>
+                    <div class="flow2-target-status">${statusText}</div>
+                </div>
+            </div>
+        `;
+    }).join('') || '';
+
     return `
-        <div class="flow2-goal-card">
-            <div class="flow2-goal-label">${getFlow2LevelLabel(activeNode)}</div>
-            <div class="flow2-goal-text">${getFlow2CurrentLevelGoal(activeNode)}</div>
+        <div class="flow2-goal-card flow2-item-mission-card">
+            <div class="flow2-goal-top">
+                <div>
+                    <div class="flow2-goal-label">${getFlow2LevelLabel(activeNode)} mission</div>
+                    <div class="flow2-goal-text">Spin these items</div>
+                </div>
+                <div class="flow2-goal-progress">${hitCount}/${total}</div>
+            </div>
+            <div class="flow2-goal-subtext">${getFlow2CurrentLevelGoal(activeNode)}</div>
+            <div class="flow2-target-grid">
+                ${targetCards}
+            </div>
         </div>
     `;
 }
 
 function renderFlow2KingdomHome(curRegion, theme) {
     const mapHTML = renderKingdomMapNodes(curRegion, state.currentRegionIdx, theme);
-    const taskPanelHtml = renderFlow2TaskPanel();
 
     return `
         <div class="screen active map-screen flow2-map-screen" style="background-color: ${theme.bg};">
-            <div class="map-region-nav flow2-map-nav">
-                <div class="region-title">${curRegion.name}</div>
+            <div class="flow2-map-header">
+                ${modeCenterTabsHtml()}
+                <div class="map-region-nav flow2-map-nav">
+                    <div class="region-title">${curRegion.name}</div>
+                </div>
+                <div class="flow2-map-top-strip">
+                    ${renderFlow2MapCastleAnchor()}
+                    <div class="flow2-map-progress-pill">${getFlow2CastleProgressText()}</div>
+                </div>
             </div>
-            <div class="flow2-map-top-strip">
-                ${renderFlow2MapCastleAnchor()}
-                <div class="flow2-map-progress-pill">${getFlow2CastleProgressText()}</div>
+            <div class="flow2-map-content">
+                <div class="flow2-map-stage">
+                    <div class="map-nodes">${mapHTML}</div>
+                </div>
             </div>
-            <div class="map-nodes">${mapHTML}</div>
-            ${taskPanelHtml}
         </div>
     `;
 }
 
 function renderFlow2KingdomSlot(curRegion) {
     const theme = KINGDOM_SLOT_THEMES[curRegion.id] || KINGDOM_SLOT_THEMES.home;
+    const activeNode = getRegionCurrentNode(curRegion);
+    const { hitCount, total } = getFlow2SpinMissionStats(state.currentRegionIdx, activeNode);
+    const headerText = total > 0
+        ? `${getFlow2LevelLabel(activeNode)} · ${hitCount}/${total} items`
+        : getFlow2LevelLabel(activeNode);
 
     return `
         <div class="screen active slot-screen">
             <div class="slot-header" style="background: rgba(0,0,0,0.8);">
                 <button class="back-btn" onclick="switchScreen('home')">◀ BACK</button>
                 <div class="slot-region-tag" style="color: ${theme.accent};">${curRegion.name}</div>
-                <div class="slot-header-content" style="color: ${theme.accent};">${getFlow2LevelLabel(getRegionCurrentNode(curRegion))}</div>
+                <div class="slot-header-content" style="color: ${theme.accent};">${headerText}</div>
             </div>
             <div class="slot-reels-container kingdom-slot-layout flow2-slot-layout">
                 <div class="kingdom-slot-main">
@@ -645,7 +1030,7 @@ function renderFlow2KingdomSlot(curRegion) {
                         <div class="k-reel"></div>
                         <div class="k-reel"></div>
                     </div>
-                    <button id="kingdom-spin-btn" class="spin-btn" style="background: linear-gradient(to bottom, ${theme.accent}, ${theme.accent}aa); border-color: ${theme.accent}; box-shadow: 0 10px 0 ${theme.accent}55, 0 15px 20px rgba(0,0,0,0.6);" ${state.kingdomSpinBusy ? 'disabled' : 'onclick="spinKingdomSlot()"'}>SPIN</button>
+                    <button id="kingdom-spin-btn" class="spin-btn" style="background: linear-gradient(to bottom, ${theme.accent}, ${theme.accent}aa); border-color: ${theme.accent}; box-shadow: 0 10px 0 ${theme.accent}55, 0 15px 20px rgba(0,0,0,0.6);" onclick="spinKingdomSlot()" ${state.kingdomSpinBusy ? 'disabled' : ''}>SPIN</button>
                 </div>
                 <aside class="kingdom-slot-side">
                     ${renderFlow2GoalPanel(curRegion)}
@@ -656,12 +1041,20 @@ function renderFlow2KingdomSlot(curRegion) {
 }
 
 function renderFlow2CastleScreen(curRegion) {
+    const flow2 = getFlow2State();
     const activeMission = getFlow2ActiveMission();
     const canBuild = !!activeMission && state.crowns >= activeMission.cost;
     const missionTitle = activeMission ? activeMission.title : 'Castle completed';
     const missionCost = activeMission ? activeMission.cost : 0;
     const missionVisual = activeMission ? activeMission.visual : '🏰';
     const stageArt = ['🏚️', '🏯', '🏰'][Math.min(getFlow2DoneMissionCount(), 2)];
+    const autoBuildNote = !activeMission
+        ? '<div class="flow2-castle-auto-note complete">All castle missions are complete.</div>'
+        : (flow2?.castleAutoBuilding
+            ? '<div class="flow2-castle-auto-note building">Auto-building current mission...</div>'
+            : (canBuild
+                ? '<div class="flow2-castle-auto-note ready">Build starts automatically when you enter the castle.</div>'
+                : '<div class="flow2-castle-hint">Need more crowns from chest rewards.</div>'));
 
     return `
         <div class="screen active castle-bg flow2-castle-screen">
@@ -681,8 +1074,7 @@ function renderFlow2CastleScreen(curRegion) {
                     <div class="flow2-castle-mission-kicker">Current mission</div>
                     <div class="flow2-castle-mission-title">${missionVisual} ${missionTitle}</div>
                     <div class="flow2-castle-mission-cost">Cost · 👑 ${missionCost}</div>
-                    <button class="flow2-build-btn" onclick="buildFlow2CastleMission()" ${!activeMission || !canBuild ? 'disabled' : ''}>Build</button>
-                    ${activeMission && !canBuild ? '<div class="flow2-castle-hint">Need more crowns from chest rewards.</div>' : ''}
+                    ${autoBuildNote}
                 </div>
             </div>
         </div>
@@ -1380,17 +1772,20 @@ function renderKingdomMapNodes(curRegion, regionIdx, theme) {
             const chestAction = chestStatus === 'claimable' ? `onclick="claimChest(${chestIdx})"` : '';
             const chestIcon = chestStatus === 'claimed' ? '✅' : (chestStatus === 'claimable' ? '🎁' : '🧰');
             const flow2TargetClass = isFlow2Active() && claimableChestIdx === chestIdx ? ' flow2-target' : '';
+            const flow3ArrowClass = shouldShowFlow3TutorialArrows() && claimableChestIdx === chestIdx ? ' tutorial-arrow-target' : '';
             chestHtml = `
-                <button type="button" class="reward-chest ${chestStatus}${flow2TargetClass}" title="${chestTooltip}" aria-label="${chestTooltip}" ${chestAction}>${chestIcon}</button>
+                <button type="button" class="reward-chest ${chestStatus}${flow2TargetClass}${flow3ArrowClass}" title="${chestTooltip}" aria-label="${chestTooltip}" ${chestAction}>${chestIcon}</button>
             `;
         }
 
-        const flow2NodeTargetClass = isFlow2Active() && i === activeNode && (!tutorialActive || (claimableChestIdx === null && !highlightBuild)) ? ' flow2-target' : '';
+        const isTutorialNodeTarget = isFlow2Active() && i === activeNode && (!tutorialActive || (claimableChestIdx === null && !highlightBuild));
+        const flow2NodeTargetClass = isTutorialNodeTarget ? ' flow2-target' : '';
+        const flow3NodeArrowClass = shouldShowFlow3TutorialArrows() && isTutorialNodeTarget ? ' tutorial-arrow-target' : '';
 
         if (nodesInRow === 0) mapHTML += '<div class="node-row">';
         mapHTML += `
             <div class="node-wrapper">
-                <div class="level-node ${status} ${extraClass}${flow2NodeTargetClass} tooltip" data-tip="${tooltip}" style="${nodeStyle}" ${onclick ? 'onclick="' + onclick + '"' : ''}>${innerText}${pathLine}</div>
+                <div class="level-node ${status} ${extraClass}${flow2NodeTargetClass}${flow3NodeArrowClass} tooltip" data-tip="${tooltip}" style="${nodeStyle}" ${onclick ? 'onclick="' + onclick + '"' : ''}>${innerText}${pathLine}</div>
                 ${chestHtml}
             </div>
         `;
@@ -1461,7 +1856,7 @@ function renderTopBar() {
 
 // Centered horizontal mode tabs — rendered above main content
 function modeCenterTabsHtml() {
-    if (isFlow2Active()) return '';
+    if (!shouldShowModeTabs()) return '';
     return `
         <div class="mode-tabs-center">
             <button class="mode-tab-btn ${state.mode === 'casino' ? 'active' : ''}" onclick="switchMode('casino')">\ud83c\udfb0 Casino</button>
@@ -1626,7 +2021,7 @@ function renderScreen() {
                                 <button onclick="changeBet(500)">+</button>
                             </div>
 
-                            <button id="kingdom-spin-btn" class="spin-btn" style="background: linear-gradient(to bottom, ${theme.accent}, ${theme.accent}aa); border-color: ${theme.accent}; box-shadow: 0 10px 0 ${theme.accent}55, 0 15px 20px rgba(0,0,0,0.6);" ${regionCleared ? 'disabled' : 'onclick="spinKingdomSlot()"'} ${state.kingdomSpinBusy ? 'disabled' : ''}>${regionCleared ? 'CLEARED' : 'SPIN'}</button>
+                            <button id="kingdom-spin-btn" class="spin-btn" style="background: linear-gradient(to bottom, ${theme.accent}, ${theme.accent}aa); border-color: ${theme.accent}; box-shadow: 0 10px 0 ${theme.accent}55, 0 15px 20px rgba(0,0,0,0.6);" onclick="spinKingdomSlot()" ${regionCleared ? 'disabled' : ''} ${state.kingdomSpinBusy ? 'disabled' : ''}>${regionCleared ? 'CLEARED' : 'SPIN'}</button>
                         </div>
 
                         <aside class="kingdom-slot-side">
@@ -1750,6 +2145,9 @@ function renderScreen() {
     } else {
         state.casinoSlotEngine = null;
     }
+
+    syncScriptedFlowOverlays();
+    maybeRunFlow2CastleAutoBuild();
 }
 
 function updateTabs() {
@@ -1760,11 +2158,23 @@ function updateTabs() {
 // --- ACTIONS & INTERACTIONS ---
 
 function switchMode(newMode) {
-    if (isFlow2Active() && newMode !== 'kingdom') {
-        showToast('Flow 2 stays in Kingdom mode.');
+    if (isFlow2Active() && isKingdomOnlyFlow() && newMode !== 'kingdom') {
+        showToast(`${getCurrentFlowLabel()} stays in Kingdom mode.`);
         return;
     }
     if (state.mode === newMode && state.screen === 'home') return;
+
+    if (isFlow2Active()) {
+        const scriptedState = getFlow2State();
+        if (scriptedState) {
+            scriptedState.taskPanelOpen = false;
+            scriptedState.castleAutoBuildPending = false;
+            scriptedState.castleAutoBuilding = false;
+            if (newMode !== 'kingdom') {
+                scriptedState.lastSpinHitTargetIds = [];
+            }
+        }
+    }
 
     state.mode = newMode;
     state.screen = 'home';
@@ -1789,9 +2199,16 @@ function switchMode(newMode) {
 }
 
 function switchScreen(newScreen) {
-    if (isFlow2Active() && !['home', 'kingdom-slot', 'castle'].includes(newScreen)) {
-        showToast('This screen is not available in Flow 2.');
+    if (isFlow2Active() && !getAllowedScriptedFlowScreens().includes(newScreen)) {
+        showToast(`This screen is not available in ${getCurrentFlowLabel()}.`);
         return;
+    }
+    if (isFlow2Active() && newScreen !== 'kingdom-slot') {
+        getFlow2State().lastSpinHitTargetIds = [];
+    }
+    if (isFlow2Active() && newScreen !== 'castle') {
+        getFlow2State().castleAutoBuildPending = false;
+        getFlow2State().castleAutoBuilding = false;
     }
     const goingBack = (newScreen === 'home');
 
@@ -1822,6 +2239,7 @@ function switchScreen(newScreen) {
 function toggleUniversalPanel() {
     state.universalOpen = !state.universalOpen;
     if (!state.universalOpen) { closePanels(); return; }
+    els.universalPanel.className = 'slide-panel';
     if (isFlow2Active()) {
         getFlow2State().universalNotif = false;
         renderTopBar();
@@ -1969,6 +2387,9 @@ function travelToRegion(idx) {
         flow2.taskPanelOpen = false;
         flow2.mustBuildBeforeNextNode = false;
         flow2.areaCompleteShown = false;
+        flow2.lastSpinHitTargetIds = [];
+        flow2.castleAutoBuildPending = false;
+        flow2.castleAutoBuilding = false;
         flow2.step = 'flow2_area_map_ready';
     }
     state.currentRegionIdx = idx;
@@ -2010,13 +2431,29 @@ function switchBuildingRegion(idx) {
 
 function closePanels(force = false) {
     if (state.popupLocked && !force) return;
+    if (isFlow2Active()) {
+        const flow2 = getFlow2State();
+        if (flow2?.taskPanelOpen) {
+            if (flow2.step === 'flow2_castle_mission2_unlocked') {
+                setFlow2Step('flow2_node2_ready');
+            }
+            flow2.taskPanelOpen = false;
+        }
+    }
     state.universalOpen = false;
     els.overlay.classList.add('hidden');
-    els.universalPanel.classList.add('hidden');
+    els.universalPanel.className = 'slide-panel hidden';
+    els.universalPanel.innerHTML = '';
     closePopup(force);
 }
 
-els.overlay.addEventListener('click', () => closePanels());
+els.overlay.addEventListener('click', () => {
+    if (isFlow2Active() && getFlow2State()?.taskPanelOpen) {
+        closeFlow2TaskPanel();
+        return;
+    }
+    closePanels();
+});
 
 // Casino carousel swipe support
 let _touchStartX = 0;
@@ -2268,20 +2705,43 @@ function spinKingdomSlot() {
     if (spinButton) spinButton.disabled = true;
 
     if (isFlow2Active()) {
+        let nodeMissionCompleted = false;
         state.kingdomSlotEngine.spin().then((symbols) => {
             const { wonPower, wonCoins } = evaluateKingdomSpinSymbols(symbols);
             const activeNode = getRegionCurrentNode(curRegion);
             const isBoss = (activeNode === curRegion.nodes);
+            const missionResult = applyFlow2SpinMissionResult(state.currentRegionIdx, activeNode, symbols);
+            const newlyHitTargets = missionResult.newlyHitTargets || [];
+            nodeMissionCompleted = !!missionResult.completed;
+            getFlow2State().lastSpinHitTargetIds = newlyHitTargets.map((target) => target.id);
 
             state.coins += wonCoins;
             spawnFloatingReward(`🪙 +${wonCoins}`, window.innerWidth / 2 - 50, window.innerHeight / 2);
             setTimeout(() => spawnFloatingReward(`⚔️ +${wonPower}`, window.innerWidth / 2 + 50, window.innerHeight / 2), 180);
 
-            curRegion.clearedNodes = Math.min(curRegion.nodes, curRegion.clearedNodes + 1);
             renderTopBar();
             renderScreen();
 
+            if (newlyHitTargets.length > 0) {
+                const hitLabels = newlyHitTargets.map((target) => target.label).join(', ');
+                showToast(`Mission hit: ${hitLabels}`);
+                newlyHitTargets.forEach((target, idx) => {
+                    setTimeout(() => {
+                        spawnFloatingReward(
+                            `${KINGDOM_SLOT_SYMBOL_MAP[target.symbol] || '❔'} HIT`,
+                            window.innerWidth / 2 + 30,
+                            (window.innerHeight / 2) - (idx * 36)
+                        );
+                    }, 120 * idx);
+                });
+            }
+
+            if (!nodeMissionCompleted) return;
+
             setTimeout(() => {
+                curRegion.clearedNodes = Math.min(curRegion.nodes, curRegion.clearedNodes + 1);
+                getFlow2State().lastSpinHitTargetIds = [];
+
                 if (isBoss) {
                     if (maybeCompleteFlow2Area()) return;
                     setFlow2Step('area_complete_pending');
@@ -2300,7 +2760,7 @@ function spinKingdomSlot() {
         }).finally(() => {
             state.kingdomSpinBusy = false;
             const btn = document.getElementById('kingdom-spin-btn');
-            if (btn && state.screen === 'kingdom-slot' && !isRegionCleared(state.regions[state.currentRegionIdx])) {
+            if (btn && state.screen === 'kingdom-slot' && !isRegionCleared(state.regions[state.currentRegionIdx]) && !nodeMissionCompleted) {
                 btn.disabled = false;
             }
         });
@@ -2450,19 +2910,26 @@ function startGame(flowId) {
     currentFlow = flowId;
     state = getInitialState();
 
-    if (flowId === 2) {
-        state.coins = 35000;
-        state.crowns = 0;
-        state.mode = 'kingdom';
-        state.screen = 'home';
+    if (isScriptedFlowId(flowId)) {
+        const scriptedConfig = getScriptedFlowConfig(flowId) || SCRIPTED_FLOW_CONFIGS[2];
+        const stateKey = getScriptedFlowKey(flowId);
+
+        state.coins = scriptedConfig.startCoins;
+        state.crowns = scriptedConfig.startCrowns;
+        state.mode = scriptedConfig.defaultMode || 'kingdom';
+        state.screen = scriptedConfig.defaultScreen || 'home';
         state.currentRegionIdx = 0;
         state.buildingRegionIdx = 0;
-        state.flow2 = createFlow2State();
-        state.flow2.active = true;
-        state.flow2.step = 'flow2_area_map_ready';
+        if (stateKey) {
+            state.flow2 = createScriptedFlowState();
+            state.flow3 = createScriptedFlowState();
+            state[stateKey] = createScriptedFlowState();
+            state[stateKey].active = true;
+            state[stateKey].step = 'flow2_area_map_ready';
+        }
     }
 
-    document.getElementById('current-flow-text').textContent = `Flow ${flowId}`;
+    document.getElementById('current-flow-text').textContent = getCurrentFlowLabel(flowId);
     
     document.getElementById('flow-selection-screen').classList.add('hidden');
     document.getElementById('flow-indicator').classList.remove('hidden');
@@ -2480,6 +2947,9 @@ function goBackToFlowSelection() {
     state.universalOpen = false;
     if (state.flow2) {
         state.flow2.taskPanelOpen = false;
+    }
+    if (state.flow3) {
+        state.flow3.taskPanelOpen = false;
     }
     els.overlay.classList.add('hidden');
     els.universalPanel.classList.add('hidden');
