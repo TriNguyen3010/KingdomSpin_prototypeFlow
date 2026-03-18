@@ -76,6 +76,7 @@ const REGION_HOUSE_BLUEPRINTS = {
 };
 const REGION_STORY_POPUPS = {
     home: {
+        imageUrl: 'https://res.cloudinary.com/db37npbp6/image/upload/v1773850606/Gemini_Generated_Image_b2ziwdb2ziwdb2zi_mzetm4.png',
         title: 'Home Chapter',
         caption: 'The village asks for a safe house before sunset, and your crew answers with hammers, timber, and a little luck.',
         ctaLabel: 'Enter Home',
@@ -93,6 +94,7 @@ const REGION_STORY_POPUPS = {
         speech: 'Raise the first roof before nightfall!'
     },
     forest: {
+        imageUrl: 'https://res.cloudinary.com/db37npbp6/image/upload/v1773488268/Concept_3_Story_Overall_cmtikp.png',
         title: 'Forest Chapter',
         caption: 'Deep in the pines, lantern scouts race ahead to frame a lodge before the woods disappear into mist.',
         ctaLabel: 'Enter Forest',
@@ -110,6 +112,7 @@ const REGION_STORY_POPUPS = {
         speech: 'Light the lodge. The forest is waking up!'
     },
     desert: {
+        imageUrl: 'https://res.cloudinary.com/db37npbp6/image/upload/v1773488235/Concept_2_Story_Overall_npidjt.png',
         title: 'Desert Chapter',
         caption: 'A caravan reaches the dunes at golden hour and begs for a cool villa before the sandstorm rolls in.',
         ctaLabel: 'Enter Desert',
@@ -592,6 +595,9 @@ function escapeSvgText(value) {
 
 function getRegionStoryImageSrc(region) {
     const config = getRegionStoryPopupConfig(region?.id);
+    if (config.imageUrl) {
+        return config.imageUrl;
+    }
     const safeTitle = escapeSvgText(config.title);
     const safeBurst = escapeSvgText(config.burstText);
     const safeSpeech = escapeSvgText(config.speech);
