@@ -24,6 +24,58 @@ const FLOW2_CASTLE_MISSIONS = [
     { id: 'build_castle', title: 'Build castle', cost: 1, visual: '🏰' },
     { id: 'build_fountain', title: 'Build the fountain', cost: 1, visual: '⛲' }
 ];
+const REGION_HOUSE_BLUEPRINTS = {
+    home: {
+        name: 'Home House',
+        stageVisuals: ['🪵', '🏚️', '🏡', '🏠'],
+        tasks: [
+            { id: 'home_foundation', title: 'Lay foundation', cost: 1, visual: '🧱' },
+            { id: 'home_walls', title: 'Raise the walls', cost: 2, visual: '🪵' },
+            { id: 'home_roof', title: 'Finish the roof', cost: 2, visual: '🏠' }
+        ]
+    },
+    forest: {
+        name: 'Forest Lodge',
+        stageVisuals: ['🪵', '🏚️', '🛖', '🏡', '🏘️'],
+        tasks: [
+            { id: 'forest_base', title: 'Build timber base', cost: 1, visual: '🪵' },
+            { id: 'forest_hall', title: 'Frame the lodge', cost: 2, visual: '🪚' },
+            { id: 'forest_roof', title: 'Set the roof beams', cost: 2, visual: '🛖' },
+            { id: 'forest_path', title: 'Light the forest path', cost: 2, visual: '🏮' }
+        ]
+    },
+    desert: {
+        name: 'Desert Villa',
+        stageVisuals: ['🪨', '🏚️', '🏜️', '🏯'],
+        tasks: [
+            { id: 'desert_base', title: 'Place stone base', cost: 2, visual: '🪨' },
+            { id: 'desert_hall', title: 'Raise cool walls', cost: 2, visual: '🧱' },
+            { id: 'desert_tower', title: 'Finish the wind tower', cost: 3, visual: '🏯' }
+        ]
+    },
+    snow: {
+        name: 'Snow Chalet',
+        stageVisuals: ['🪵', '🏚️', '🏡', '🏠', '🏘️'],
+        tasks: [
+            { id: 'snow_base', title: 'Insulate the base', cost: 1, visual: '🧊' },
+            { id: 'snow_chimney', title: 'Build the chimney', cost: 2, visual: '🪵' },
+            { id: 'snow_roof', title: 'Seal the roof', cost: 1, visual: '🏠' },
+            { id: 'snow_lights', title: 'Warm the windows', cost: 3, visual: '🕯️' }
+        ]
+    },
+    volcano: {
+        name: 'Forge Keep',
+        stageVisuals: ['🪨', '🏚️', '🏯', '🏰', '🏰'],
+        tasks: [
+            { id: 'volcano_base', title: 'Cast the magma base', cost: 1, visual: '🪨' },
+            { id: 'volcano_hall', title: 'Raise the forge hall', cost: 2, visual: '🔥' },
+            { id: 'volcano_roof', title: 'Lock the obsidian roof', cost: 2, visual: '🏯' },
+            { id: 'volcano_rune', title: 'Engrave the warding rune', cost: 2, visual: '✨' }
+        ]
+    }
+};
+const FLOW2_BUILD_CINEMATIC_MS = 4000;
+const FLOW2_TASK_REVEAL_MS = 1550;
 const FLOW2_SPIN_TARGET_LABELS = {
     crown: 'Crown',
     shield: 'Shield',
@@ -117,17 +169,53 @@ function shouldShowFlow3TutorialArrows() {
     return isFlow3Active() && isFlow2TutorialActive();
 }
 
+function shouldShowFlow3Region1NodeArrow(regionIdx, curRegion) {
+    if (!isFlow3Active() || regionIdx !== 0 || state.currentRegionIdx !== 0) return false;
+    if (state.mode !== 'kingdom' || state.screen !== 'home') return false;
+
+    const flow2 = getFlow2State();
+    if (!flow2 || flow2.taskPanelOpen || flow2.mustBuildBeforeNextNode) return false;
+    if (flow2.step === 'flow2_all_areas_complete') return false;
+
+    return !!curRegion && !isRegionCleared(curRegion);
+}
+
+function isFlow3ClaimChestGuidedStep() {
+    return currentFlow === 3 && !!getFlow2State()?.active && getFlow2State()?.step === 'flow2_claim_chest_guided';
+}
+
+function isFlow3PostBuildRevealStep() {
+    return currentFlow === 3 && !!getFlow2State()?.active && getFlow2State()?.step === 'flow2_castle_mission2_unlocked';
+}
+
+function shouldBypassFlow3ChestGate() {
+    return isFlow3ClaimChestGuidedStep();
+}
+
 function getAllowedScriptedFlowScreens() {
     if (!isFlow2Active()) return ['home', 'casino-slot', 'kingdom-slot', 'castle'];
 
-    const allowedScreens = ['home', 'kingdom-slot', 'castle'];
+    const allowedScreens = ['home', 'kingdom-slot'];
     if (canUseCasinoMode()) allowedScreens.push('casino-slot');
     return allowedScreens;
 }
 
-function createFlow2CastleMissions(flowId = currentFlow) {
-    const castleMissions = getScriptedFlowConfig(flowId)?.castleMissions || FLOW2_CASTLE_MISSIONS;
-    return castleMissions.map((mission, idx) => ({
+function getRegionHouseBlueprint(regionId) {
+    return REGION_HOUSE_BLUEPRINTS[regionId] || REGION_HOUSE_BLUEPRINTS.home;
+}
+
+function createFlow2House(regionId) {
+    const blueprint = getRegionHouseBlueprint(regionId);
+    return {
+        id: `${regionId}_house`,
+        name: blueprint.name,
+        stageVisuals: [...blueprint.stageVisuals]
+    };
+}
+
+function createFlow2CastleMissions(regionId) {
+    const houseTasks = getRegionHouseBlueprint(regionId).tasks || FLOW2_CASTLE_MISSIONS;
+    return houseTasks.map((mission, idx) => ({
         ...mission,
         status: idx === 0 ? FLOW2_CASTLE_TASK_STATUS.ACTIVE : FLOW2_CASTLE_TASK_STATUS.LOCKED
     }));
@@ -181,7 +269,8 @@ function createInitialRegions() {
             castle,
             chests: createRegionChests(idx, region.nodes),
             nodeMissions: {},
-            flow2CastleMissions: createFlow2CastleMissions(),
+            flow2House: createFlow2House(region.id),
+            flow2CastleMissions: createFlow2CastleMissions(region.id),
             flow2SpinMissions: {}
         };
     });
@@ -254,9 +343,18 @@ function createScriptedFlowState() {
             2: false
         },
         areaCompleteShown: false,
+        areaCompleteRegionIdx: null,
+        areaCompleteTravelRegionIdx: null,
         lastSpinHitTargetIds: [],
+        taskModalAutoAdvanceScheduled: false,
         castleAutoBuildPending: false,
-        castleAutoBuilding: false
+        castleAutoBuilding: false,
+        buildCinematicOpen: false,
+        buildCinematicMissionId: null,
+        taskRevealActive: false,
+        taskRevealCompletedMissionId: null,
+        taskRevealUnlockedMissionId: null,
+        taskRevealPendingAreaComplete: false
     };
 }
 
@@ -308,6 +406,32 @@ function getInitialState() {
 
 let currentFlow = 1;
 let state = getInitialState();
+let popupHideTimer = null;
+let flow2BuildCinematicTimer = null;
+let flow2TaskRevealTimer = null;
+
+function clearPendingPopupHide() {
+    if (popupHideTimer === null) return;
+    clearTimeout(popupHideTimer);
+    popupHideTimer = null;
+}
+
+function clearPendingFlow2BuildCinematic() {
+    if (flow2BuildCinematicTimer === null) return;
+    clearTimeout(flow2BuildCinematicTimer);
+    flow2BuildCinematicTimer = null;
+}
+
+function clearPendingFlow2TaskRevealCleanup() {
+    if (flow2TaskRevealTimer === null) return;
+    clearTimeout(flow2TaskRevealTimer);
+    flow2TaskRevealTimer = null;
+}
+
+function clearPendingFlow2MissionPresentationTimers() {
+    clearPendingFlow2BuildCinematic();
+    clearPendingFlow2TaskRevealCleanup();
+}
 
 function isFlow2Active() {
     return isScriptedFlowId() && !!getFlow2State()?.active;
@@ -329,6 +453,18 @@ function setFlow2Step(step) {
     const scriptedState = getFlow2State();
     if (!isFlow2Active() || !scriptedState) return;
     scriptedState.step = step;
+}
+
+function resetFlow2MissionPresentationState(scriptedState) {
+    if (!scriptedState) return;
+    scriptedState.castleAutoBuildPending = false;
+    scriptedState.castleAutoBuilding = false;
+    scriptedState.buildCinematicOpen = false;
+    scriptedState.buildCinematicMissionId = null;
+    scriptedState.taskRevealActive = false;
+    scriptedState.taskRevealCompletedMissionId = null;
+    scriptedState.taskRevealUnlockedMissionId = null;
+    scriptedState.taskRevealPendingAreaComplete = false;
 }
 
 function getFlow2CurrentRegion() {
@@ -482,6 +618,43 @@ function getFlow2CurrentLevelGoal(nodeNum) {
     return getFlow2MissionGoalText(state.currentRegionIdx, nodeNum);
 }
 
+function getFlow2CurrentHouse() {
+    const curRegion = getFlow2CurrentRegion();
+    if (!curRegion) return null;
+    if (!curRegion.flow2House) {
+        curRegion.flow2House = createFlow2House(curRegion.id);
+    }
+    return curRegion.flow2House;
+}
+
+function getFlow2CurrentHouseStageVisual() {
+    const house = getFlow2CurrentHouse();
+    const stageVisuals = house?.stageVisuals || ['🪵', '🏚️', '🏠'];
+    return stageVisuals[Math.min(getFlow2DoneMissionCount(), stageVisuals.length - 1)];
+}
+
+function getFlow2TaskPanelVisibleMissions() {
+    const flow2 = getFlow2State();
+    const missions = getFlow2CastleMissions();
+    if (!flow2) return missions;
+
+    if (flow2.taskRevealActive) {
+        const revealIds = new Set([
+            flow2.taskRevealCompletedMissionId,
+            flow2.taskRevealUnlockedMissionId
+        ].filter(Boolean));
+        return missions.filter((mission) => revealIds.has(mission.id));
+    }
+
+    return missions.filter((mission) => mission.status === FLOW2_CASTLE_TASK_STATUS.ACTIVE);
+}
+
+function getFlow2BuildCinematicMission() {
+    const flow2 = getFlow2State();
+    if (!flow2?.buildCinematicMissionId) return null;
+    return getFlow2CastleMissions().find((mission) => mission.id === flow2.buildCinematicMissionId) || null;
+}
+
 function getFlow2LevelLabel(nodeNum) {
     return `Level ${nodeNum}`;
 }
@@ -490,7 +663,7 @@ function getFlow2CastleMissions() {
     const curRegion = getFlow2CurrentRegion();
     if (!curRegion) return [];
     if (!Array.isArray(curRegion.flow2CastleMissions)) {
-        curRegion.flow2CastleMissions = createFlow2CastleMissions();
+        curRegion.flow2CastleMissions = createFlow2CastleMissions(curRegion.id);
     }
     return curRegion.flow2CastleMissions;
 }
@@ -510,7 +683,7 @@ function isFlow2CastleCompleted() {
 
 function getFlow2CastleProgressText() {
     const missions = getFlow2CastleMissions();
-    return `${getFlow2DoneMissionCount()}/${missions.length} missions`;
+    return `${getFlow2DoneMissionCount()}/${missions.length} tasks`;
 }
 
 function hasFlow2CastleNotif() {
@@ -534,6 +707,7 @@ function showRichPopup({
     lock = false,
     showBoosters = false
 }) {
+    clearPendingPopupHide();
     state.popupLocked = !!lock;
 
     const bodyHtml = bodyLines.map((line) => `<p class="flow2-popup-body">${line}</p>`).join('');
@@ -594,11 +768,29 @@ function showFlow2NodeClearPopup(bodyLines) {
 }
 
 function showFlow2AreaCompletePopup() {
+    const flow2 = getFlow2State();
+    const regionIdx = Number.isInteger(flow2?.areaCompleteRegionIdx) ? flow2.areaCompleteRegionIdx : state.currentRegionIdx;
+    const completedRegion = state.regions[regionIdx];
+    const houseName = completedRegion?.flow2House?.name || getRegionHouseBlueprint(completedRegion?.id)?.name || 'House';
+    const regionName = completedRegion?.name?.replace(/^[^\s]+\s/, '') || 'this area';
     showRichPopup({
         title: 'Area Complete',
-        bodyLines: ['You cleared the boss and completed the castle.'],
+        bodyLines: [`${houseName} is complete.`, `You finished the ${regionName} area.`],
         ctaLabel: 'Continue',
         onClick: 'handleFlow2AreaCompleteContinue()',
+        lock: true
+    });
+}
+
+function showFlow2AllAreasCompletePopup() {
+    showRichPopup({
+        title: `${getCurrentFlowLabel()} Complete`,
+        bodyLines: [
+            'You finished every house build in this scripted flow.',
+            'Return to the flow selection screen to start another run.'
+        ],
+        ctaLabel: 'Back to Flows',
+        onClick: 'handleFlow2AllAreasCompleteContinue()',
         lock: true
     });
 }
@@ -620,16 +812,24 @@ function handleFlow2LevelIntroPlay(nodeNum) {
 
 function handleFlow2NodeClearContinue() {
     if (!isFlow2Active()) return;
-    getFlow2State().lastSpinHitTargetIds = [];
+    const flow2 = getFlow2State();
+    flow2.lastSpinHitTargetIds = [];
     state.popupLocked = false;
     closePopup(true);
     state.mode = 'kingdom';
     state.screen = 'home';
     const curRegion = getFlow2CurrentRegion();
-    if (getFirstClaimableChestIdx(curRegion) !== null) {
+
+    if (isFlow3Active() && flow2.step === 'flow2_node1_cleared' && !flow2.tutorialComplete) {
+        flow2.taskNotif = false;
+        flow2.taskPanelOpen = true;
+        flow2.taskModalAutoAdvanceScheduled = false;
+        flow2.mustBuildBeforeNextNode = true;
+        setFlow2Step('flow2_claim_chest_guided');
+    } else if (getFirstClaimableChestIdx(curRegion) !== null) {
         setFlow2Step('flow2_area_map_chest_ready');
     } else if (isRegionCleared(curRegion) && !isFlow2CastleCompleted()) {
-        setFlow2Step('area_complete_pending');
+        guideFlow2ToHouseCompletion();
     }
     renderTopBar();
     renderScreen();
@@ -641,7 +841,8 @@ function handleFlow2AreaCompleteContinue() {
     closePopup(true);
 
     const flow2 = getFlow2State();
-    const nextRegionIdx = state.currentRegionIdx + 1;
+    const completedRegionIdx = Number.isInteger(flow2.areaCompleteRegionIdx) ? flow2.areaCompleteRegionIdx : state.currentRegionIdx;
+    const nextRegionIdx = Number.isInteger(flow2.areaCompleteTravelRegionIdx) ? flow2.areaCompleteTravelRegionIdx : (completedRegionIdx + 1);
     if (nextRegionIdx < state.regions.length) {
         state.regions[nextRegionIdx].unlocked = true;
         state.regions[nextRegionIdx].castle.unlocked = true;
@@ -652,6 +853,8 @@ function handleFlow2AreaCompleteContinue() {
     flow2.taskNotif = false;
     flow2.mustBuildBeforeNextNode = false;
     flow2.areaCompleteShown = false;
+    flow2.areaCompleteRegionIdx = null;
+    flow2.areaCompleteTravelRegionIdx = null;
     flow2.step = 'flow2_area_map_ready';
 
     if (nextRegionIdx < state.regions.length) {
@@ -660,77 +863,238 @@ function handleFlow2AreaCompleteContinue() {
         return;
     }
 
+    setFlow2Step('flow2_all_areas_complete');
     renderTopBar();
     renderScreen();
-    showToast('All areas unlocked.');
+    showFlow2AllAreasCompletePopup();
+}
+
+function handleFlow2AllAreasCompleteContinue() {
+    if (!isFlow2Active()) return;
+    state.popupLocked = false;
+    closePopup(true);
+    goBackToFlowSelection();
 }
 
 function openFlow2TaskPanel() {
     if (!isFlow2Active()) return;
+    if (getFlow2State()?.buildCinematicOpen) return;
     const curRegion = getFlow2CurrentRegion();
-    if (isFlow2TutorialActive() && getFirstClaimableChestIdx(curRegion) !== null) {
+    if (isFlow2TutorialActive() && getFirstClaimableChestIdx(curRegion) !== null && !shouldBypassFlow3ChestGate()) {
         showToast('Claim your chest reward first.');
         return;
     }
-    getFlow2State().taskNotif = false;
+    const flow2 = getFlow2State();
+    flow2.taskNotif = false;
+    flow2.taskModalAutoAdvanceScheduled = false;
     state.universalOpen = false;
     state.mode = 'kingdom';
     state.screen = 'home';
-    getFlow2State().taskPanelOpen = true;
+    flow2.taskPanelOpen = true;
     renderTopBar();
     renderScreen();
 }
 
 function closeFlow2TaskPanel() {
     if (!isFlow2Active()) return;
+    if (getFlow2State()?.castleAutoBuilding || getFlow2State()?.taskRevealActive || getFlow2State()?.buildCinematicOpen) return;
+    if (isFlow3ClaimChestGuidedStep()) return;
     const flow2 = getFlow2State();
     if (flow2.step === 'flow2_castle_mission2_unlocked') {
         setFlow2Step('flow2_node2_ready');
     }
     flow2.taskPanelOpen = false;
+    flow2.taskModalAutoAdvanceScheduled = false;
     closePanels(true);
     renderScreen();
+}
+
+function finishFlow2TaskReveal() {
+    clearPendingFlow2TaskRevealCleanup();
+    if (!isFlow2Active()) return;
+    const flow2 = getFlow2State();
+    if (!flow2) return;
+
+    const shouldCompleteArea = !!flow2.taskRevealPendingAreaComplete;
+    const shouldKeepTaskPanelOpen = !!flow2.taskRevealUnlockedMissionId && !shouldCompleteArea;
+
+    flow2.taskRevealActive = false;
+    flow2.taskRevealCompletedMissionId = null;
+    flow2.taskRevealUnlockedMissionId = null;
+    flow2.taskRevealPendingAreaComplete = false;
+    flow2.taskPanelOpen = shouldKeepTaskPanelOpen;
+    flow2.taskNotif = false;
+
+    renderTopBar();
+    renderScreen();
+
+    if (shouldCompleteArea) {
+        maybeCompleteFlow2Area();
+    }
+}
+
+function scheduleFlow2TaskRevealCleanup(delay = FLOW2_TASK_REVEAL_MS) {
+    clearPendingFlow2TaskRevealCleanup();
+    flow2TaskRevealTimer = setTimeout(() => {
+        flow2TaskRevealTimer = null;
+        finishFlow2TaskReveal();
+    }, delay);
+}
+
+function startFlow2BuildCinematic(activeMission) {
+    if (!isFlow2Active() || !activeMission) return false;
+    const flow2 = getFlow2State();
+    if (!flow2) return false;
+
+    clearPendingFlow2MissionPresentationTimers();
+    resetFlow2MissionPresentationState(flow2);
+    state.universalOpen = false;
+    state.mode = 'kingdom';
+    state.screen = 'home';
+    flow2.taskNotif = false;
+    flow2.taskPanelOpen = false;
+    flow2.castleAutoBuilding = true;
+    flow2.buildCinematicOpen = true;
+    flow2.buildCinematicMissionId = activeMission.id;
+    state.buildingRegionIdx = state.currentRegionIdx;
+    renderTopBar();
+    renderScreen();
+
+    flow2BuildCinematicTimer = setTimeout(() => {
+        flow2BuildCinematicTimer = null;
+        completeFlow2BuildCinematic();
+    }, FLOW2_BUILD_CINEMATIC_MS);
+    return true;
+}
+
+function completeFlow2BuildCinematic() {
+    clearPendingFlow2BuildCinematic();
+    if (!isFlow2Active()) return false;
+    const flow2 = getFlow2State();
+    if (!flow2?.buildCinematicOpen) return false;
+
+    flow2.buildCinematicOpen = false;
+    flow2.buildCinematicMissionId = null;
+    return performFlow2CastleMissionBuild(false);
+}
+
+function recoverFlow2CastleAutoBuildStart(activeMission, showInsufficientPopup = false) {
+    if (!isFlow2Active()) return false;
+    const flow2 = getFlow2State();
+    if (!flow2) return false;
+
+    clearPendingFlow2MissionPresentationTimers();
+    resetFlow2MissionPresentationState(flow2);
+    if (activeMission) {
+        flow2.taskPanelOpen = true;
+        flow2.taskNotif = false;
+    }
+    state.mode = 'kingdom';
+    state.screen = 'home';
+    renderTopBar();
+    renderScreen();
+
+    if (showInsufficientPopup && activeMission) {
+        showPopup('🚫 NOT ENOUGH CROWNS', `Need ${activeMission.cost} crown${activeMission.cost > 1 ? 's' : ''} to ${activeMission.title.toLowerCase()}.`);
+    } else {
+        showToast(activeMission ? 'Build could not start. Try again.' : 'No active castle mission.');
+    }
+    return false;
+}
+
+function startFlow2CastleAutoBuild() {
+    return true;
+}
+
+function scheduleFlow2CastleAutoBuildStart(attempt = 0) {
+    return;
 }
 
 function openFlow2ActiveMission() {
     if (!isFlow2Active()) return;
     const curRegion = getFlow2CurrentRegion();
-    if (isFlow2TutorialActive() && getFirstClaimableChestIdx(curRegion) !== null) {
+    if (isFlow2TutorialActive() && getFirstClaimableChestIdx(curRegion) !== null && !shouldBypassFlow3ChestGate()) {
         showToast('Claim your chest reward first.');
         return;
     }
     const activeMission = getFlow2ActiveMission();
     if (!activeMission) {
-        showToast('Castle completed.');
+        showToast('House is already complete.');
         return;
     }
 
     const flow2 = getFlow2State();
-    flow2.taskPanelOpen = false;
-    flow2.castleAutoBuildPending = state.crowns >= activeMission.cost;
+    state.universalOpen = false;
+    state.mode = 'kingdom';
+    state.screen = 'home';
+    flow2.taskNotif = false;
+    flow2.taskPanelOpen = true;
+    flow2.taskModalAutoAdvanceScheduled = false;
+    flow2.castleAutoBuildPending = false;
     flow2.castleAutoBuilding = false;
     state.buildingRegionIdx = state.currentRegionIdx;
-    switchScreen('castle');
+    renderTopBar();
+    renderScreen();
+}
+
+function startFlow2ActiveMissionBuild() {
+    if (!isFlow2Active()) return false;
+    const flow2 = getFlow2State();
+    if (flow2?.buildCinematicOpen || flow2?.taskRevealActive || flow2?.castleAutoBuilding) return false;
+    const activeMission = getFlow2ActiveMission();
+    if (!activeMission) {
+        showToast('House is already complete.');
+        return false;
+    }
+
+    if (state.crowns < activeMission.cost) {
+        showPopup('🚫 NOT ENOUGH CROWNS', `Need ${activeMission.cost} crown${activeMission.cost > 1 ? 's' : ''} to ${activeMission.title.toLowerCase()}.`);
+        return false;
+    }
+
+    flow2.taskModalAutoAdvanceScheduled = false;
+    return startFlow2BuildCinematic(activeMission);
 }
 
 function maybeCompleteFlow2Area() {
     if (!isFlow2Active()) return false;
     const flow2 = getFlow2State();
-    const curRegion = getFlow2CurrentRegion();
-    if (!curRegion) return false;
-    if (!isRegionCleared(curRegion) || !isFlow2CastleCompleted() || flow2.areaCompleteShown) return false;
+    const completedRegionIdx = state.currentRegionIdx;
+    if (!isFlow2CastleCompleted()) return false;
+    if (flow2.areaCompleteShown && flow2.areaCompleteRegionIdx === completedRegionIdx) return false;
 
     flow2.areaCompleteShown = true;
+    flow2.areaCompleteRegionIdx = completedRegionIdx;
+    flow2.areaCompleteTravelRegionIdx = completedRegionIdx < (state.regions.length - 1)
+        ? completedRegionIdx + 1
+        : null;
     setFlow2Step('area_complete');
     showFlow2AreaCompletePopup();
     return true;
 }
 
+function guideFlow2ToHouseCompletion() {
+    if (!isFlow2Active() || isFlow2CastleCompleted()) return false;
+
+    const flow2 = getFlow2State();
+    const activeMission = getFlow2ActiveMission();
+    if (!activeMission) return false;
+
+    flow2.taskNotif = true;
+    flow2.taskPanelOpen = false;
+    flow2.taskModalAutoAdvanceScheduled = false;
+    flow2.mustBuildBeforeNextNode = false;
+    setFlow2Step('flow2_castle_mission_guided');
+    return true;
+}
+
 function performFlow2CastleMissionBuild(showInsufficientPopup = true) {
     if (!isFlow2Active()) return;
+    const flow2 = getFlow2State();
+    const useFlow3GuidedCinematic = isFlow3ClaimChestGuidedStep();
     const activeMission = getFlow2ActiveMission();
     if (!activeMission) {
-        showToast('Castle already completed.');
+        showToast('House is already complete.');
         return false;
     }
 
@@ -751,20 +1115,29 @@ function performFlow2CastleMissionBuild(showInsufficientPopup = true) {
     const missions = getFlow2CastleMissions();
     const nextMission = missions.find((mission) => mission.status === FLOW2_CASTLE_TASK_STATUS.LOCKED);
     if (nextMission) nextMission.status = FLOW2_CASTLE_TASK_STATUS.ACTIVE;
+    const doneMissionCount = getFlow2DoneMissionCount();
+    const unlockedFirstFollowupTask = doneMissionCount === 1 && !!nextMission;
+    const areaShouldComplete = isFlow2CastleCompleted();
 
-    const flow2 = getFlow2State();
     flow2.mustBuildBeforeNextNode = false;
-    flow2.taskNotif = !!nextMission;
-    flow2.taskPanelOpen = !!nextMission;
-    flow2.castleAutoBuildPending = false;
-    flow2.castleAutoBuilding = false;
+    flow2.taskNotif = false;
+    flow2.taskPanelOpen = true;
+    flow2.taskModalAutoAdvanceScheduled = false;
+    resetFlow2MissionPresentationState(flow2);
+    flow2.taskRevealActive = true;
+    flow2.taskRevealCompletedMissionId = completedMission.id;
+    flow2.taskRevealUnlockedMissionId = nextMission?.id || null;
+    flow2.taskRevealPendingAreaComplete = areaShouldComplete;
     state.mode = 'kingdom';
     state.screen = 'home';
 
-    if (completedMission.id === 'build_castle' && nextMission?.id === 'build_fountain') {
+    if (useFlow3GuidedCinematic && unlockedFirstFollowupTask) {
         flow2.tutorialComplete = true;
         setFlow2Step('flow2_castle_mission2_unlocked');
-    } else if (isFlow2CastleCompleted()) {
+    } else if (unlockedFirstFollowupTask) {
+        flow2.tutorialComplete = true;
+        setFlow2Step('flow2_castle_mission2_unlocked');
+    } else if (areaShouldComplete) {
         setFlow2Step('flow2_castle_completed');
     } else {
         setFlow2Step('flow2_castle_mission_guided');
@@ -774,8 +1147,7 @@ function performFlow2CastleMissionBuild(showInsufficientPopup = true) {
     renderScreen();
     spawnFloatingReward(`${completedMission.visual} Done`, window.innerWidth / 2, window.innerHeight / 2);
     showToast(`${completedMission.title} complete.`);
-
-    if (maybeCompleteFlow2Area()) return true;
+    scheduleFlow2TaskRevealCleanup();
     return true;
 }
 
@@ -783,33 +1155,12 @@ function buildFlow2CastleMission() {
     return performFlow2CastleMissionBuild(true);
 }
 
+function maybeRunFlow3ClaimChestGuidedTaskAdvance() {
+    if (!isFlow3ClaimChestGuidedStep()) return;
+}
+
 function maybeRunFlow2CastleAutoBuild() {
-    if (!isFlow2Active() || state.screen !== 'castle') return;
-    const flow2 = getFlow2State();
-    if (!flow2 || !flow2.castleAutoBuildPending || flow2.castleAutoBuilding) return;
-
-    const activeMission = getFlow2ActiveMission();
-    if (!activeMission || state.crowns < activeMission.cost) {
-        flow2.castleAutoBuildPending = false;
-        flow2.castleAutoBuilding = false;
-        return;
-    }
-
-    flow2.castleAutoBuilding = true;
-    renderScreen();
-
-    setTimeout(() => {
-        if (!isFlow2Active()) return;
-        const scriptedState = getFlow2State();
-        if (!scriptedState?.castleAutoBuilding || state.screen !== 'castle') {
-            if (scriptedState) {
-                scriptedState.castleAutoBuildPending = false;
-                scriptedState.castleAutoBuilding = false;
-            }
-            return;
-        }
-        performFlow2CastleMissionBuild(false);
-    }, 280);
+    return;
 }
 
 function onFlow2NodeClick(nodeNum) {
@@ -821,15 +1172,15 @@ function onFlow2NodeClick(nodeNum) {
     if (nodeNum !== activeNode || isRegionCleared(curRegion)) return;
 
     if (isFlow2TutorialActive()) {
-        const claimableChestIdx = getFirstClaimableChestIdx(curRegion);
-        if (claimableChestIdx !== null) {
-            showToast('Claim your chest reward first.');
+        if (flow2.mustBuildBeforeNextNode) {
+            openFlow2TaskPanel();
+            showToast('Finish the current house task first.');
             return;
         }
 
-        if (flow2.mustBuildBeforeNextNode) {
-            openFlow2TaskPanel();
-            showToast('Finish the current castle task first.');
+        const claimableChestIdx = getFirstClaimableChestIdx(curRegion);
+        if (claimableChestIdx !== null && !shouldBypassFlow3ChestGate()) {
+            showToast('Claim your chest reward first.');
             return;
         }
     }
@@ -850,12 +1201,34 @@ function onFlow2NodeClick(nodeNum) {
 function renderFlow2TaskPanel() {
     if (!isFlow2Active() || !getFlow2State().taskPanelOpen) return '';
 
-    const showBuildArrow = shouldShowFlow3TutorialArrows() && getFlow2State().mustBuildBeforeNextNode;
-    const missionRows = getFlow2CastleMissions().map((mission) => {
+    const house = getFlow2CurrentHouse();
+    const flow2 = getFlow2State();
+    const isGuidedBuildStep = isFlow3ClaimChestGuidedStep();
+    const isPostBuildReveal = !!flow2.taskRevealActive;
+    const showBuildArrow = shouldShowFlow3TutorialArrows() && flow2.mustBuildBeforeNextNode && !isPostBuildReveal;
+    const visibleMissions = getFlow2TaskPanelVisibleMissions();
+    const modalSubcopy = isPostBuildReveal
+        ? (flow2.taskRevealUnlockedMissionId
+            ? 'Build complete. The finished task is clearing out and the next task is now ready.'
+            : 'Build complete. Wrapping up the final task for this house.')
+        : (isGuidedBuildStep
+            ? 'Spend your crown to start the first house build.'
+            : 'Finish the active build to unlock the next scripted step.');
+    const missionRows = visibleMissions.map((mission) => {
         const isActive = mission.status === FLOW2_CASTLE_TASK_STATUS.ACTIVE;
-        const rowClass = `flow2-task-row ${mission.status}`;
-        const actionClass = isActive && showBuildArrow ? ' flow2-target tutorial-arrow-target' : '';
-        const action = isActive ? `<button class="flow2-task-btn${actionClass}" onclick="openFlow2ActiveMission()">Build</button>` : '';
+        const canAffordMission = state.crowns >= mission.cost;
+        const isRevealDone = isPostBuildReveal && mission.id === flow2.taskRevealCompletedMissionId;
+        const isRevealActive = isPostBuildReveal && mission.id === flow2.taskRevealUnlockedMissionId;
+        const rowClass = `flow2-task-row ${mission.status}${isActive && isGuidedBuildStep ? ' guided-focus' : ''}${isRevealDone ? ' reveal-done' : ''}${isRevealActive ? ' reveal-active' : ''}`;
+        const actionClass = `${isActive && showBuildArrow && canAffordMission ? ' flow2-target tutorial-arrow-target' : ''}${!canAffordMission ? ' disabled' : ''}`;
+        const actionAttrs = canAffordMission
+            ? 'onclick="startFlow2ActiveMissionBuild()"'
+            : `disabled aria-disabled="true" title="Need ${Math.max(0, mission.cost - state.crowns)} more crown${Math.max(0, mission.cost - state.crowns) === 1 ? '' : 's'}"`;
+        const action = isActive
+            ? (isPostBuildReveal
+                ? ''
+                : `<button class="flow2-task-btn${actionClass}" ${actionAttrs}>Build</button>`)
+            : '';
         const badge = mission.status === FLOW2_CASTLE_TASK_STATUS.DONE
             ? '<div class="flow2-task-badge done">Done</div>'
             : `<div class="flow2-task-badge ${mission.status}">${mission.status === FLOW2_CASTLE_TASK_STATUS.ACTIVE ? `Cost · 👑 ${mission.cost}` : 'Locked'}</div>`;
@@ -873,24 +1246,27 @@ function renderFlow2TaskPanel() {
             </div>
         `;
     }).join('');
+    const emptyState = !missionRows
+        ? '<div class="flow2-task-empty">No active tasks to show right now.</div>'
+        : '';
 
     return `
-        <div class="flow2-task-modal">
+        <div class="flow2-task-modal${isGuidedBuildStep ? ' guided-build' : ''}${isPostBuildReveal ? ' post-build-reveal' : ''}">
             <div class="flow2-task-modal-head">
                 <div class="flow2-task-modal-copy">
-                    <div class="flow2-task-modal-kicker">Castle Tasks</div>
-                    <div class="flow2-task-modal-title">${getCurrentFlowLabel()} Kingdom Tasks</div>
-                    <div class="flow2-task-modal-sub">Finish the active build to unlock the next scripted step.</div>
+                    <div class="flow2-task-modal-kicker">House Tasks</div>
+                    <div class="flow2-task-modal-title">${house?.name || `${getCurrentFlowLabel()} Build Tasks`}</div>
+                    <div class="flow2-task-modal-sub">${modalSubcopy}</div>
                 </div>
-                <button class="flow2-task-modal-close" onclick="closeFlow2TaskPanel()" aria-label="Close task list">✕</button>
+                ${(isGuidedBuildStep || isPostBuildReveal) ? '' : '<button class="flow2-task-modal-close" onclick="closeFlow2TaskPanel()" aria-label="Close task list">✕</button>'}
             </div>
             <aside class="flow2-task-panel">
                 <div class="flow2-task-panel-head">
-                    <div class="flow2-task-panel-title">Castle</div>
+                    <div class="flow2-task-panel-title">House</div>
                     <div class="flow2-task-panel-progress">${getFlow2CastleProgressText()}</div>
                 </div>
                 <div class="flow2-task-panel-list">
-                    ${missionRows}
+                    ${missionRows || emptyState}
                 </div>
             </aside>
         </div>
@@ -901,10 +1277,84 @@ function renderFlow2TaskPanelOverlay() {
     const taskPanelHtml = renderFlow2TaskPanel();
     if (!taskPanelHtml) return;
 
-    els.universalPanel.className = 'slide-panel flow2-task-panel-modal';
+    const wasVisible = els.universalPanel.classList.contains('flow2-task-panel-modal')
+        && els.universalPanel.classList.contains('is-visible')
+        && !els.universalPanel.classList.contains('hidden');
+
+    els.universalPanel.className = `slide-panel flow2-task-panel-modal${wasVisible ? ' is-visible' : ''}`;
     els.universalPanel.innerHTML = taskPanelHtml;
     els.overlay.classList.remove('hidden');
+    els.overlay.classList.remove('flow2-build-cinematic-overlay');
+    els.overlay.classList.add('flow2-task-panel-overlay');
     els.universalPanel.classList.remove('hidden');
+
+    if (wasVisible) {
+        els.overlay.classList.add('is-visible');
+        return;
+    }
+
+    els.overlay.classList.remove('is-visible');
+    els.universalPanel.classList.remove('is-visible');
+    requestAnimationFrame(() => {
+        const flow2 = getFlow2State();
+        if (!flow2?.taskPanelOpen) return;
+        els.overlay.classList.add('is-visible');
+        els.universalPanel.classList.add('is-visible');
+    });
+}
+
+function renderFlow2BuildCinematicOverlay() {
+    const flow2 = getFlow2State();
+    const mission = getFlow2BuildCinematicMission();
+    const house = getFlow2CurrentHouse();
+    const curRegion = getFlow2CurrentRegion();
+    if (!flow2?.buildCinematicOpen || !mission || !house || !curRegion) return;
+
+    const stageArt = getFlow2CurrentHouseStageVisual();
+    const wasVisible = els.universalPanel.classList.contains('flow2-build-cinematic-panel')
+        && els.universalPanel.classList.contains('is-visible')
+        && !els.universalPanel.classList.contains('hidden');
+
+    els.universalPanel.className = `slide-panel flow2-build-cinematic-panel${wasVisible ? ' is-visible' : ''}`;
+    els.universalPanel.innerHTML = `
+        <div class="flow2-build-cinematic">
+            <div class="flow2-build-cinematic-kicker">Construction Sequence</div>
+            <div class="flow2-build-cinematic-title">${house.name}</div>
+            <div class="flow2-build-cinematic-sub">${curRegion.name.replace(/^[^\s]+\s/, '')} crew is building the next house section.</div>
+            <div class="flow2-build-cinematic-stage">
+                <div class="flow2-build-cinematic-spark spark-a"></div>
+                <div class="flow2-build-cinematic-spark spark-b"></div>
+                <div class="flow2-build-cinematic-stage-art">${stageArt}</div>
+                <div class="flow2-build-cinematic-task-badge">${mission.visual} ${mission.title}</div>
+            </div>
+            <div class="flow2-build-cinematic-progress">
+                <span></span>
+            </div>
+        </div>
+    `;
+    els.overlay.classList.remove('hidden');
+    els.overlay.classList.remove('flow2-task-panel-overlay');
+    els.overlay.classList.add('flow2-build-cinematic-overlay');
+    els.universalPanel.classList.remove('hidden');
+
+    if (wasVisible) {
+        els.overlay.classList.add('is-visible');
+        return;
+    }
+
+    els.overlay.classList.remove('is-visible');
+    els.universalPanel.classList.remove('is-visible');
+    requestAnimationFrame(() => {
+        const scriptedState = getFlow2State();
+        if (!scriptedState?.buildCinematicOpen) return;
+        els.overlay.classList.add('is-visible');
+        els.universalPanel.classList.add('is-visible');
+    });
+}
+
+function resetFlow2TaskPanelOverlayAnimation() {
+    els.overlay.classList.remove('flow2-task-panel-overlay', 'flow2-build-cinematic-overlay', 'is-visible');
+    els.universalPanel.classList.remove('is-visible');
 }
 
 function syncScriptedFlowOverlays() {
@@ -912,9 +1362,12 @@ function syncScriptedFlowOverlays() {
     const flow2 = getFlow2State();
     if (!flow2) return;
 
-    if (flow2.taskPanelOpen) {
+    if (flow2.buildCinematicOpen) {
+        renderFlow2BuildCinematicOverlay();
+    } else if (flow2.taskPanelOpen) {
         renderFlow2TaskPanelOverlay();
     } else if (!state.universalOpen) {
+        resetFlow2TaskPanelOverlayAnimation();
         els.universalPanel.className = 'slide-panel hidden';
         els.universalPanel.innerHTML = '';
         if (!els.popup.classList.contains('show')) {
@@ -924,21 +1377,26 @@ function syncScriptedFlowOverlays() {
 }
 
 function renderFlow2MapCastleAnchor() {
+    const house = getFlow2CurrentHouse();
     const activeMission = getFlow2ActiveMission();
     const subtitle = isFlow2CastleCompleted()
-        ? 'Castle completed'
-        : (activeMission ? activeMission.title : 'Open castle');
+        ? 'House completed'
+        : (activeMission ? activeMission.title : 'Open house');
     const stateClass = isFlow2CastleCompleted() ? 'done' : (activeMission ? 'active' : 'idle');
     const shouldShowMapCastleArrow = shouldShowFlow3TutorialArrows()
         && getFlow2State().mustBuildBeforeNextNode
         && !getFlow2State().taskPanelOpen;
     const targetClass = shouldShowMapCastleArrow ? ' flow2-target tutorial-arrow-target' : '';
+    const finalHouseStageVisual = house?.stageVisuals?.[Math.max(0, (house?.stageVisuals?.length || 1) - 1)] || '🏠';
+    const anchorIcon = isFlow2CastleCompleted()
+        ? finalHouseStageVisual
+        : getFlow2CurrentHouseStageVisual();
 
     return `
         <button class="flow2-map-castle-anchor ${stateClass}${targetClass}" onclick="openFlow2ActiveMission()">
-            <div class="flow2-map-castle-icon">${isFlow2CastleCompleted() ? '🏰' : '🏯'}</div>
+            <div class="flow2-map-castle-icon">${anchorIcon}</div>
             <div class="flow2-map-castle-copy">
-                <div class="flow2-map-castle-title">Castle</div>
+                <div class="flow2-map-castle-title">House</div>
                 <div class="flow2-map-castle-sub">${subtitle}</div>
             </div>
         </button>
@@ -1041,37 +1499,49 @@ function renderFlow2KingdomSlot(curRegion) {
 }
 
 function renderFlow2CastleScreen(curRegion) {
+    const house = getFlow2CurrentHouse();
     const flow2 = getFlow2State();
+    const isGuidedCinematic = isFlow3ClaimChestGuidedStep();
     const activeMission = getFlow2ActiveMission();
     const canBuild = !!activeMission && state.crowns >= activeMission.cost;
-    const missionTitle = activeMission ? activeMission.title : 'Castle completed';
+    const missionTitle = activeMission ? activeMission.title : 'House completed';
     const missionCost = activeMission ? activeMission.cost : 0;
-    const missionVisual = activeMission ? activeMission.visual : '🏰';
-    const stageArt = ['🏚️', '🏯', '🏰'][Math.min(getFlow2DoneMissionCount(), 2)];
+    const missionVisual = activeMission ? activeMission.visual : getFlow2CurrentHouseStageVisual();
+    const stageArt = getFlow2CurrentHouseStageVisual();
+    const houseName = house?.name || `${curRegion.name.replace(/^[^\s]+\s/, '')} House`;
+    const buildProgress = flow2?.castleAutoBuilding
+        ? `
+            <div class="flow2-castle-build-progress">
+                <div class="flow2-castle-build-label">Construction in progress</div>
+                <div class="flow2-castle-build-bar"><span></span></div>
+            </div>
+        `
+        : '';
     const autoBuildNote = !activeMission
-        ? '<div class="flow2-castle-auto-note complete">All castle missions are complete.</div>'
+        ? '<div class="flow2-castle-auto-note complete">All house tasks are complete.</div>'
         : (flow2?.castleAutoBuilding
-            ? '<div class="flow2-castle-auto-note building">Auto-building current mission...</div>'
+            ? '<div class="flow2-castle-auto-note building">Building sequence is running. Please wait...</div>'
             : (canBuild
-                ? '<div class="flow2-castle-auto-note ready">Build starts automatically when you enter the castle.</div>'
-                : '<div class="flow2-castle-hint">Need more crowns from chest rewards.</div>'));
+                ? '<div class="flow2-castle-auto-note ready">Build starts automatically when you enter the house.</div>'
+                : `<div class="flow2-castle-hint">Need ${Math.max(0, missionCost - state.crowns)} more crown${Math.max(0, missionCost - state.crowns) === 1 ? '' : 's'} from nodes and chests.</div>`));
 
     return `
-        <div class="screen active castle-bg flow2-castle-screen">
+        <div class="screen active castle-bg flow2-castle-screen${isGuidedCinematic ? ' cinematic' : ''}">
             <div class="flow2-castle-shell">
                 <div class="flow2-castle-head">
-                    <button class="castle-ui-btn" onclick="switchScreen('home')" aria-label="Back to map">◀ Back</button>
+                    ${isGuidedCinematic ? '<div class="flow2-castle-head-spacer"></div>' : '<button class="castle-ui-btn" onclick="switchScreen(\'home\')" aria-label="Back to map">◀ Back</button>'}
                     <div class="flow2-castle-head-copy">
-                        <div class="flow2-castle-head-title">Castle</div>
+                        <div class="flow2-castle-head-title">${houseName}</div>
                         <div class="flow2-castle-head-sub">${getFlow2CastleProgressText()}</div>
                     </div>
                 </div>
-                <div class="flow2-castle-stage ${isFlow2CastleCompleted() ? 'complete' : ''}">
+                <div class="flow2-castle-stage ${isFlow2CastleCompleted() ? 'complete' : ''}${flow2?.castleAutoBuilding ? ' building' : ''}">
                     <div class="flow2-castle-stage-art">${stageArt}</div>
-                    <div class="flow2-castle-stage-note">${curRegion.name.replace(/^[^\s]+\s/, '')} Castle</div>
+                    <div class="flow2-castle-stage-note">${curRegion.name.replace(/^[^\s]+\s/, '')} House</div>
+                    ${buildProgress}
                 </div>
                 <div class="flow2-castle-mission-card">
-                    <div class="flow2-castle-mission-kicker">Current mission</div>
+                    <div class="flow2-castle-mission-kicker">Current build task</div>
                     <div class="flow2-castle-mission-title">${missionVisual} ${missionTitle}</div>
                     <div class="flow2-castle-mission-cost">Cost · 👑 ${missionCost}</div>
                     ${autoBuildNote}
@@ -1725,6 +2195,7 @@ function renderKingdomMapNodes(curRegion, regionIdx, theme) {
     const activeNode = getRegionCurrentNode(curRegion);
     const regionCleared = isRegionCleared(curRegion);
     const tutorialActive = isFlow2TutorialActive();
+    const showRegion1NodeArrow = shouldShowFlow3Region1NodeArrow(regionIdx, curRegion);
     const claimableChestIdx = tutorialActive ? getFirstClaimableChestIdx(curRegion) : null;
     const highlightBuild = tutorialActive && getFlow2State().mustBuildBeforeNextNode;
     let mapHTML = '';
@@ -1780,12 +2251,13 @@ function renderKingdomMapNodes(curRegion, regionIdx, theme) {
 
         const isTutorialNodeTarget = isFlow2Active() && i === activeNode && (!tutorialActive || (claimableChestIdx === null && !highlightBuild));
         const flow2NodeTargetClass = isTutorialNodeTarget ? ' flow2-target' : '';
-        const flow3NodeArrowClass = shouldShowFlow3TutorialArrows() && isTutorialNodeTarget ? ' tutorial-arrow-target' : '';
+        const shouldShowNodeArrow = isTutorialNodeTarget && (shouldShowFlow3TutorialArrows() || showRegion1NodeArrow);
+        const flow3NodeArrowClass = shouldShowNodeArrow ? ' tutorial-arrow-target' : '';
 
         if (nodesInRow === 0) mapHTML += '<div class="node-row">';
         mapHTML += `
-            <div class="node-wrapper">
-                <div class="level-node ${status} ${extraClass}${flow2NodeTargetClass}${flow3NodeArrowClass} tooltip" data-tip="${tooltip}" style="${nodeStyle}" ${onclick ? 'onclick="' + onclick + '"' : ''}>${innerText}${pathLine}</div>
+            <div class="node-wrapper${flow3NodeArrowClass}">
+                <div class="level-node ${status} ${extraClass}${flow2NodeTargetClass} tooltip" data-tip="${tooltip}" style="${nodeStyle}" ${onclick ? 'onclick="' + onclick + '"' : ''}>${innerText}${pathLine}</div>
                 ${chestHtml}
             </div>
         `;
@@ -1828,22 +2300,19 @@ function renderTopBar() {
             <button class="btn btn-icon" style="background: #374151; border-color: #4b5563;">⚙</button>
         `;
     } else if (isFlow2Active()) {
-        if (state.screen === 'kingdom-slot') {
+        if (state.screen === 'kingdom-slot' || getFlow2State()?.buildCinematicOpen) {
             els.topBarRight.innerHTML = '';
             return;
         }
         const flow2 = getFlow2State();
         const universalDot = flow2.universalNotif ? '<span class="btn-notify-dot" aria-hidden="true"></span>' : '';
         const taskDot = flow2.taskNotif ? '<span class="btn-notify-dot" aria-hidden="true"></span>' : '';
-        const castleDot = hasFlow2CastleNotif() ? '<span class="btn-notify-dot" aria-hidden="true"></span>' : '';
         els.topBarRight.innerHTML = `
             <button class="btn btn-with-dot" id="btn-flow2-universal" style="background: linear-gradient(to bottom, #8b5cf6, #5b21b6); border-color: #a78bfa;">🌍 Universal${universalDot}</button>
             <button class="btn btn-with-dot" id="btn-flow2-task" style="background: linear-gradient(to bottom, #2563eb, #1d4ed8); border-color: #60a5fa;">📝 Tasks${taskDot}</button>
-            <button class="btn btn-with-dot" id="btn-flow2-castle" style="background: linear-gradient(to bottom, #d946ef, #a21caf); border-color: #f0abfc;">🏰 Castle${castleDot}</button>
         `;
         document.getElementById('btn-flow2-universal').addEventListener('click', toggleUniversalPanel);
         document.getElementById('btn-flow2-task').addEventListener('click', openFlow2TaskPanel);
-        document.getElementById('btn-flow2-castle').addEventListener('click', openFlow2ActiveMission);
     } else {
         els.topBarRight.innerHTML = `
             <button class="btn" id="btn-universal" style="background: linear-gradient(to bottom, #8b5cf6, #5b21b6); border-color: #a78bfa;">🌍 Universal</button>
@@ -2033,7 +2502,10 @@ function renderScreen() {
         }
     } else if (state.screen === 'castle') {
         if (isFlow2Active()) {
-            html = renderFlow2CastleScreen(state.regions[state.currentRegionIdx]);
+            state.screen = 'home';
+            const curRegion = state.regions[state.currentRegionIdx];
+            const theme = KINGDOM_MAP_THEMES[curRegion.id] || KINGDOM_MAP_THEMES.home;
+            html = renderFlow2KingdomHome(curRegion, theme);
         } else {
             const unlockedCastleIdxs = getUnlockedCastleIndexes();
             if (!unlockedCastleIdxs.includes(state.buildingRegionIdx)) {
@@ -2147,6 +2619,7 @@ function renderScreen() {
     }
 
     syncScriptedFlowOverlays();
+    maybeRunFlow3ClaimChestGuidedTaskAdvance();
     maybeRunFlow2CastleAutoBuild();
 }
 
@@ -2168,8 +2641,9 @@ function switchMode(newMode) {
         const scriptedState = getFlow2State();
         if (scriptedState) {
             scriptedState.taskPanelOpen = false;
-            scriptedState.castleAutoBuildPending = false;
-            scriptedState.castleAutoBuilding = false;
+            scriptedState.taskModalAutoAdvanceScheduled = false;
+            resetFlow2MissionPresentationState(scriptedState);
+            clearPendingFlow2MissionPresentationTimers();
             if (newMode !== 'kingdom') {
                 scriptedState.lastSpinHitTargetIds = [];
             }
@@ -2199,6 +2673,10 @@ function switchMode(newMode) {
 }
 
 function switchScreen(newScreen) {
+    if (isFlow2Active() && newScreen === 'castle') {
+        openFlow2ActiveMission();
+        return;
+    }
     if (isFlow2Active() && !getAllowedScriptedFlowScreens().includes(newScreen)) {
         showToast(`This screen is not available in ${getCurrentFlowLabel()}.`);
         return;
@@ -2206,9 +2684,10 @@ function switchScreen(newScreen) {
     if (isFlow2Active() && newScreen !== 'kingdom-slot') {
         getFlow2State().lastSpinHitTargetIds = [];
     }
-    if (isFlow2Active() && newScreen !== 'castle') {
-        getFlow2State().castleAutoBuildPending = false;
-        getFlow2State().castleAutoBuilding = false;
+    if (isFlow2Active() && newScreen !== 'home') {
+        getFlow2State().taskModalAutoAdvanceScheduled = false;
+        resetFlow2MissionPresentationState(getFlow2State());
+        clearPendingFlow2MissionPresentationTimers();
     }
     const goingBack = (newScreen === 'home');
 
@@ -2387,9 +2866,12 @@ function travelToRegion(idx) {
         flow2.taskPanelOpen = false;
         flow2.mustBuildBeforeNextNode = false;
         flow2.areaCompleteShown = false;
+        flow2.areaCompleteRegionIdx = null;
+        flow2.areaCompleteTravelRegionIdx = null;
         flow2.lastSpinHitTargetIds = [];
-        flow2.castleAutoBuildPending = false;
-        flow2.castleAutoBuilding = false;
+        flow2.taskModalAutoAdvanceScheduled = false;
+        resetFlow2MissionPresentationState(flow2);
+        clearPendingFlow2MissionPresentationTimers();
         flow2.step = 'flow2_area_map_ready';
     }
     state.currentRegionIdx = idx;
@@ -2431,6 +2913,8 @@ function switchBuildingRegion(idx) {
 
 function closePanels(force = false) {
     if (state.popupLocked && !force) return;
+    if (isFlow3ClaimChestGuidedStep() && getFlow2State()?.taskPanelOpen && !force) return;
+    if (isFlow2Active() && (getFlow2State()?.castleAutoBuilding || getFlow2State()?.taskRevealActive || getFlow2State()?.buildCinematicOpen) && !force) return;
     if (isFlow2Active()) {
         const flow2 = getFlow2State();
         if (flow2?.taskPanelOpen) {
@@ -2438,9 +2922,11 @@ function closePanels(force = false) {
                 setFlow2Step('flow2_node2_ready');
             }
             flow2.taskPanelOpen = false;
+            flow2.taskModalAutoAdvanceScheduled = false;
         }
     }
     state.universalOpen = false;
+    resetFlow2TaskPanelOverlayAnimation();
     els.overlay.classList.add('hidden');
     els.universalPanel.className = 'slide-panel hidden';
     els.universalPanel.innerHTML = '';
@@ -2448,7 +2934,9 @@ function closePanels(force = false) {
 }
 
 els.overlay.addEventListener('click', () => {
+    if (isFlow2Active() && getFlow2State()?.buildCinematicOpen) return;
     if (isFlow2Active() && getFlow2State()?.taskPanelOpen) {
+        if (isFlow3ClaimChestGuidedStep()) return;
         closeFlow2TaskPanel();
         return;
     }
@@ -2547,10 +3035,12 @@ function claimChest(chestIdx) {
         const flow2 = getFlow2State();
         if (isFlow2TutorialActive()) {
             flow2.taskPanelOpen = true;
+            flow2.taskModalAutoAdvanceScheduled = false;
             flow2.mustBuildBeforeNextNode = true;
             setFlow2Step('flow2_claim_chest_guided');
         } else {
             flow2.taskPanelOpen = false;
+            flow2.taskModalAutoAdvanceScheduled = false;
             flow2.mustBuildBeforeNextNode = false;
             setFlow2Step('flow2_chest_claimed_optional');
         }
@@ -2565,6 +3055,7 @@ function claimChest(chestIdx) {
 }
 
 function showPopup(title, msg, onContinueStr = "closePopup()", isBoss = false) {
+    clearPendingPopupHide();
     state.popupLocked = false;
     let border = isBoss ? '#ef4444' : 'var(--gold)';
     els.popup.innerHTML = `
@@ -2585,11 +3076,15 @@ function showPopup(title, msg, onContinueStr = "closePopup()", isBoss = false) {
 
 function closePopup(force = false) {
     if (state.popupLocked && !force) return;
+    clearPendingPopupHide();
     state.popupLocked = false;
     els.popup.classList.remove('show');
     els.overlay.classList.add('hidden');
     // Add hidden back after transition ends
-    setTimeout(() => { els.popup.classList.add('hidden'); }, 350);
+    popupHideTimer = setTimeout(() => {
+        els.popup.classList.add('hidden');
+        popupHideTimer = null;
+    }, 350);
 }
 
 function spawnFloatingReward(emoji, x, y) {
@@ -2741,18 +3236,24 @@ function spinKingdomSlot() {
             setTimeout(() => {
                 curRegion.clearedNodes = Math.min(curRegion.nodes, curRegion.clearedNodes + 1);
                 getFlow2State().lastSpinHitTargetIds = [];
+                state.crowns += 1;
+                renderTopBar();
+                spawnFloatingReward('👑 +1', window.innerWidth / 2 + 70, window.innerHeight / 2 - 10);
+                const rewardLine = 'You earned +1 crown.';
 
                 if (isBoss) {
                     if (maybeCompleteFlow2Area()) return;
-                    setFlow2Step('area_complete_pending');
-                    showFlow2NodeClearPopup(['Boss cleared.', 'Complete the castle to finish the area.']);
+                    showFlow2NodeClearPopup(['Boss cleared.', rewardLine, 'Finish the house to complete the area.']);
                     return;
                 }
 
                 if (activeNode === 1) {
                     setFlow2Step('flow2_node1_cleared');
                 }
-                showFlow2NodeClearPopup(['Node cleared.', 'Your chest reward is ready.']);
+                const nodeClearBody = (currentFlow === 3 && activeNode === 1)
+                    ? ['Node cleared.', rewardLine, 'Your first house build is ready.']
+                    : ['Node cleared.', rewardLine, 'Your chest reward is ready.'];
+                showFlow2NodeClearPopup(nodeClearBody);
             }, 850);
         }).catch((err) => {
             console.error('kingdom slot spin error', err);
@@ -2908,6 +3409,8 @@ function claimCastleCompletionBonus() {
 
 function startGame(flowId) {
     currentFlow = flowId;
+    clearPendingPopupHide();
+    clearPendingFlow2MissionPresentationTimers();
     state = getInitialState();
 
     if (isScriptedFlowId(flowId)) {
@@ -2943,16 +3446,24 @@ function startGame(flowId) {
 
 function goBackToFlowSelection() {
     currentFlow = 1;
+    clearPendingPopupHide();
+    clearPendingFlow2MissionPresentationTimers();
     state.popupLocked = false;
     state.universalOpen = false;
     if (state.flow2) {
         state.flow2.taskPanelOpen = false;
+        state.flow2.taskModalAutoAdvanceScheduled = false;
+        resetFlow2MissionPresentationState(state.flow2);
     }
     if (state.flow3) {
         state.flow3.taskPanelOpen = false;
+        state.flow3.taskModalAutoAdvanceScheduled = false;
+        resetFlow2MissionPresentationState(state.flow3);
     }
+    resetFlow2TaskPanelOverlayAnimation();
     els.overlay.classList.add('hidden');
-    els.universalPanel.classList.add('hidden');
+    els.universalPanel.className = 'slide-panel hidden';
+    els.universalPanel.innerHTML = '';
     els.popup.classList.remove('show');
     els.popup.classList.add('hidden');
     document.getElementById('game-container').classList.add('hidden');
