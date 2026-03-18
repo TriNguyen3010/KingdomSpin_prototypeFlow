@@ -11,6 +11,17 @@ Lưu các kế hoạch triển khai theo từng tính năng.
   - Checklist QA
 
 ## Danh sách plan
+- [2026-03-18-task-complete-tick-and-next-task-slide-up.md](./2026-03-18-task-complete-tick-and-next-task-slide-up.md)
+- [2026-03-18-task-reveal-simplify-to-fade.md](./2026-03-18-task-reveal-simplify-to-fade.md)
+- [2026-03-18-smooth-task-reveal-animation.md](./2026-03-18-smooth-task-reveal-animation.md)
+- [2026-03-18-region-entry-comic-story-popup.md](./2026-03-18-region-entry-comic-story-popup.md)
+- [2026-03-18-shrink-house-task-popup.md](./2026-03-18-shrink-house-task-popup.md)
+- [2026-03-18-build-cinematic-inside-task-popup-size.md](./2026-03-18-build-cinematic-inside-task-popup-size.md)
+- [2026-03-18-build-cinematic-fit-within-screen.md](./2026-03-18-build-cinematic-fit-within-screen.md)
+- [2026-03-18-house-task-popup-show-current-crowns.md](./2026-03-18-house-task-popup-show-current-crowns.md)
+- [2026-03-18-flow-3-boss-clear-task-arrow-blocked-by-chest-priority.md](./2026-03-18-flow-3-boss-clear-task-arrow-blocked-by-chest-priority.md)
+- [2026-03-18-flow-3-boss-clear-task-button-arrow.md](./2026-03-18-flow-3-boss-clear-task-button-arrow.md)
+- [2026-03-18-remove-home-house-summary-strip.md](./2026-03-18-remove-home-house-summary-strip.md)
 - [2026-03-18-scripted-build-cinematic-and-task-reveal.md](./2026-03-18-scripted-build-cinematic-and-task-reveal.md)
 - [2026-03-18-remove-scripted-castle-screen.md](./2026-03-18-remove-scripted-castle-screen.md)
 - [2026-03-18-house-task-popup-open-animation.md](./2026-03-18-house-task-popup-open-animation.md)

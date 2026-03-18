@@ -74,8 +74,97 @@ const REGION_HOUSE_BLUEPRINTS = {
         ]
     }
 };
+const REGION_STORY_POPUPS = {
+    home: {
+        title: 'Home Chapter',
+        caption: 'The village asks for a safe house before sunset, and your crew answers with hammers, timber, and a little luck.',
+        ctaLabel: 'Enter Home',
+        palette: {
+            skyTop: '#7dd3fc',
+            skyBottom: '#2563eb',
+            ground: '#14532d',
+            accent: '#f59e0b',
+            panelBorder: '#fef3c7'
+        },
+        heroIcon: '🧑‍🌾',
+        buildIcon: '🏠',
+        supportIcon: '🪵',
+        burstText: 'POW!',
+        speech: 'Raise the first roof before nightfall!'
+    },
+    forest: {
+        title: 'Forest Chapter',
+        caption: 'Deep in the pines, lantern scouts race ahead to frame a lodge before the woods disappear into mist.',
+        ctaLabel: 'Enter Forest',
+        palette: {
+            skyTop: '#86efac',
+            skyBottom: '#166534',
+            ground: '#14532d',
+            accent: '#facc15',
+            panelBorder: '#dcfce7'
+        },
+        heroIcon: '🧝',
+        buildIcon: '🛖',
+        supportIcon: '🌲',
+        burstText: 'RUSTLE!',
+        speech: 'Light the lodge. The forest is waking up!'
+    },
+    desert: {
+        title: 'Desert Chapter',
+        caption: 'A caravan reaches the dunes at golden hour and begs for a cool villa before the sandstorm rolls in.',
+        ctaLabel: 'Enter Desert',
+        palette: {
+            skyTop: '#fde68a',
+            skyBottom: '#d97706',
+            ground: '#92400e',
+            accent: '#fb7185',
+            panelBorder: '#ffedd5'
+        },
+        heroIcon: '🧕',
+        buildIcon: '🏯',
+        supportIcon: '🏜️',
+        burstText: 'WHOOSH!',
+        speech: 'Build fast. The storm is chasing us!'
+    },
+    snow: {
+        title: 'Snow Chapter',
+        caption: 'The mountain trail freezes over, so the crew must finish a warm chalet before the blizzard takes the valley.',
+        ctaLabel: 'Enter Snow',
+        palette: {
+            skyTop: '#bfdbfe',
+            skyBottom: '#0f766e',
+            ground: '#164e63',
+            accent: '#fef08a',
+            panelBorder: '#e0f2fe'
+        },
+        heroIcon: '🧥',
+        buildIcon: '🏠',
+        supportIcon: '❄️',
+        burstText: 'CRACK!',
+        speech: 'Seal the windows. Keep the fire alive!'
+    },
+    volcano: {
+        title: 'Volcano Chapter',
+        caption: 'Molten rivers surge below the ridge, and only a forge keep with ancient wards can hold the mountain back.',
+        ctaLabel: 'Enter Volcano',
+        palette: {
+            skyTop: '#fb7185',
+            skyBottom: '#7f1d1d',
+            ground: '#431407',
+            accent: '#f59e0b',
+            panelBorder: '#fecaca'
+        },
+        heroIcon: '🛡️',
+        buildIcon: '🏰',
+        supportIcon: '🌋',
+        burstText: 'BOOM!',
+        speech: 'Raise the keep before the lava climbs higher!'
+    }
+};
 const FLOW2_BUILD_CINEMATIC_MS = 4000;
-const FLOW2_TASK_REVEAL_MS = 1550;
+const FLOW2_TASK_REVEAL_EXIT_MS = 810;
+const FLOW2_TASK_REVEAL_ENTER_MS = 730;
+const FLOW2_TASK_REVEAL_FINAL_HOLD_MS = 1200;
 const FLOW2_SPIN_TARGET_LABELS = {
     crown: 'Crown',
     shield: 'Shield',
@@ -180,6 +269,20 @@ function shouldShowFlow3Region1NodeArrow(regionIdx, curRegion) {
     return !!curRegion && !isRegionCleared(curRegion);
 }
 
+function shouldShowFlow3TaskButtonArrow() {
+    if (!isFlow3Active()) return false;
+    if (state.mode !== 'kingdom' || state.screen !== 'home') return false;
+
+    const flow2 = getFlow2State();
+    const curRegion = getFlow2CurrentRegion();
+    if (!flow2 || !curRegion) return false;
+    if (flow2.taskPanelOpen || flow2.buildCinematicOpen || flow2.taskRevealActive) return false;
+    if (!flow2.taskNotif) return false;
+    if (!isRegionCleared(curRegion) || isFlow2CastleCompleted()) return false;
+
+    return flow2.step === 'flow2_castle_mission_guided';
+}
+
 function isFlow3ClaimChestGuidedStep() {
     return currentFlow === 3 && !!getFlow2State()?.active && getFlow2State()?.step === 'flow2_claim_chest_guided';
 }
@@ -266,6 +369,7 @@ function createInitialRegions() {
         return {
             ...region,
             clearedNodes: 0,
+            storySeen: false,
             castle,
             chests: createRegionChests(idx, region.nodes),
             nodeMissions: {},
@@ -352,6 +456,7 @@ function createScriptedFlowState() {
         buildCinematicOpen: false,
         buildCinematicMissionId: null,
         taskRevealActive: false,
+        taskRevealPhase: null,
         taskRevealCompletedMissionId: null,
         taskRevealUnlockedMissionId: null,
         taskRevealPendingAreaComplete: false
@@ -462,6 +567,7 @@ function resetFlow2MissionPresentationState(scriptedState) {
     scriptedState.buildCinematicOpen = false;
     scriptedState.buildCinematicMissionId = null;
     scriptedState.taskRevealActive = false;
+    scriptedState.taskRevealPhase = null;
     scriptedState.taskRevealCompletedMissionId = null;
     scriptedState.taskRevealUnlockedMissionId = null;
     scriptedState.taskRevealPendingAreaComplete = false;
@@ -469,6 +575,128 @@ function resetFlow2MissionPresentationState(scriptedState) {
 
 function getFlow2CurrentRegion() {
     return state.regions[state.currentRegionIdx];
+}
+
+function getRegionStoryPopupConfig(regionId) {
+    return REGION_STORY_POPUPS[regionId] || REGION_STORY_POPUPS.home;
+}
+
+function escapeSvgText(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
+
+function getRegionStoryImageSrc(region) {
+    const config = getRegionStoryPopupConfig(region?.id);
+    const safeTitle = escapeSvgText(config.title);
+    const safeBurst = escapeSvgText(config.burstText);
+    const safeSpeech = escapeSvgText(config.speech);
+    const safeHero = escapeSvgText(config.heroIcon);
+    const safeBuild = escapeSvgText(config.buildIcon);
+    const safeSupport = escapeSvgText(config.supportIcon);
+    const regionLabel = escapeSvgText((region?.name || 'Region').replace(/^[^\s]+\s/, ''));
+    const { skyTop, skyBottom, ground, accent, panelBorder } = config.palette;
+    const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" fill="none">
+            <defs>
+                <linearGradient id="sky" x1="480" y1="0" x2="480" y2="540" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="${skyTop}"/>
+                    <stop offset="1" stop-color="${skyBottom}"/>
+                </linearGradient>
+                <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+                    <circle cx="6" cy="6" r="3" fill="rgba(255,255,255,0.18)"/>
+                    <circle cx="20" cy="18" r="2.5" fill="rgba(255,255,255,0.14)"/>
+                </pattern>
+                <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="rgba(15,23,42,0.35)"/>
+                </filter>
+            </defs>
+            <rect width="960" height="540" rx="44" fill="url(#sky)"/>
+            <rect width="960" height="540" rx="44" fill="url(#dots)" opacity="0.5"/>
+            <path d="M0 420C107 371 198 371 286 409C380 450 470 453 563 411C645 373 731 361 818 391C875 411 922 424 960 426V540H0V420Z" fill="${ground}" opacity="0.92"/>
+            <circle cx="786" cy="122" r="66" fill="${accent}" opacity="0.26"/>
+            <circle cx="786" cy="122" r="40" fill="${accent}" opacity="0.4"/>
+            <rect x="42" y="38" width="876" height="464" rx="36" stroke="${panelBorder}" stroke-width="6" opacity="0.95"/>
+            <rect x="70" y="72" width="230" height="72" rx="18" fill="rgba(15,23,42,0.68)" stroke="${panelBorder}" stroke-width="3"/>
+            <text x="94" y="118" fill="#fff7ed" font-size="34" font-family="Trebuchet MS, Arial, sans-serif" font-weight="900">${safeTitle}</text>
+            <text x="715" y="112" fill="#fff7ed" font-size="42" font-family="Impact, Arial Black, sans-serif" font-weight="900" transform="rotate(-8 715 112)">${safeBurst}</text>
+            <g filter="url(#shadow)">
+                <rect x="150" y="182" width="300" height="126" rx="28" fill="white" stroke="#0f172a" stroke-width="8"/>
+                <path d="M258 308L286 348L320 308" fill="white" stroke="#0f172a" stroke-width="8" stroke-linejoin="round"/>
+            </g>
+            <text x="178" y="240" fill="#0f172a" font-size="26" font-family="Trebuchet MS, Arial, sans-serif" font-weight="900">${safeSpeech}</text>
+            <text x="118" y="420" font-size="132">${safeHero}</text>
+            <text x="592" y="392" font-size="156">${safeBuild}</text>
+            <text x="774" y="418" font-size="86">${safeSupport}</text>
+            <rect x="520" y="430" width="290" height="58" rx="18" fill="rgba(15,23,42,0.7)" stroke="${panelBorder}" stroke-width="3"/>
+            <text x="548" y="468" fill="#fff7ed" font-size="28" font-family="Trebuchet MS, Arial, sans-serif" font-weight="900">${regionLabel}</text>
+        </svg>
+    `;
+
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function resetPopupChrome() {
+    els.popup.classList.remove('region-story-popup');
+    els.popup.style.borderColor = '';
+    els.popup.style.boxShadow = '';
+}
+
+function showRegionStoryPopup(regionIdx = state.currentRegionIdx) {
+    const region = state.regions[regionIdx];
+    if (!region) return;
+
+    const config = getRegionStoryPopupConfig(region.id);
+    const imageSrc = getRegionStoryImageSrc(region);
+    clearPendingPopupHide();
+    state.popupLocked = true;
+    resetPopupChrome();
+    els.popup.classList.add('region-story-popup');
+    els.popup.innerHTML = `
+        <div class="region-story-popup-shell">
+            <div class="region-story-kicker">New Area Unlocked</div>
+            <div class="region-story-title">${config.title}</div>
+            <div class="region-story-image-frame">
+                <img class="region-story-image" src="${imageSrc}" alt="${config.title} comic story panel" />
+            </div>
+            <div class="region-story-caption">${config.caption}</div>
+            <button class="btn region-story-btn" onclick="handleRegionStoryPopupContinue()">${config.ctaLabel || 'Continue'}</button>
+        </div>
+    `;
+    els.popup.style.borderColor = config.palette.panelBorder;
+    els.popup.style.boxShadow = `0 24px 64px rgba(0,0,0,0.76), 0 0 28px ${config.palette.accent}55`;
+    els.overlay.classList.remove('hidden');
+    els.popup.classList.remove('hidden');
+    void els.popup.offsetWidth;
+    els.popup.classList.add('show');
+}
+
+function canShowRegionStoryPopup(regionIdx = state.currentRegionIdx) {
+    const region = state.regions[regionIdx];
+    if (!region || region.storySeen) return false;
+    if (state.mode !== 'kingdom' || state.screen !== 'home') return false;
+    if (isFlow2Active()) {
+        const scriptedState = getFlow2State();
+        if (scriptedState?.taskPanelOpen || scriptedState?.buildCinematicOpen || scriptedState?.taskRevealActive) return false;
+    }
+    return true;
+}
+
+function maybeShowRegionStoryPopup(regionIdx = state.currentRegionIdx) {
+    if (!canShowRegionStoryPopup(regionIdx)) return false;
+    const region = state.regions[regionIdx];
+    if (!region) return false;
+    region.storySeen = true;
+    showRegionStoryPopup(regionIdx);
+    return true;
+}
+
+function handleRegionStoryPopupContinue() {
+    closePopup(true);
 }
 
 function getFlow2SymbolLabel(symbol) {
@@ -639,11 +867,19 @@ function getFlow2TaskPanelVisibleMissions() {
     if (!flow2) return missions;
 
     if (flow2.taskRevealActive) {
-        const revealIds = new Set([
-            flow2.taskRevealCompletedMissionId,
-            flow2.taskRevealUnlockedMissionId
-        ].filter(Boolean));
-        return missions.filter((mission) => revealIds.has(mission.id));
+        if (flow2.taskRevealPhase === 'enter' && flow2.taskRevealUnlockedMissionId) {
+            return missions.filter((mission) => mission.id === flow2.taskRevealUnlockedMissionId);
+        }
+
+        if (flow2.taskRevealCompletedMissionId) {
+            return missions.filter((mission) => mission.id === flow2.taskRevealCompletedMissionId);
+        }
+
+        if (flow2.taskRevealUnlockedMissionId) {
+            return missions.filter((mission) => mission.id === flow2.taskRevealUnlockedMissionId);
+        }
+
+        return [];
     }
 
     return missions.filter((mission) => mission.status === FLOW2_CASTLE_TASK_STATUS.ACTIVE);
@@ -709,6 +945,7 @@ function showRichPopup({
 }) {
     clearPendingPopupHide();
     state.popupLocked = !!lock;
+    resetPopupChrome();
 
     const bodyHtml = bodyLines.map((line) => `<p class="flow2-popup-body">${line}</p>`).join('');
     const goalHtml = goalText
@@ -826,6 +1063,8 @@ function handleFlow2NodeClearContinue() {
         flow2.taskModalAutoAdvanceScheduled = false;
         flow2.mustBuildBeforeNextNode = true;
         setFlow2Step('flow2_claim_chest_guided');
+    } else if (isFlow3Active() && isRegionCleared(curRegion) && !isFlow2CastleCompleted()) {
+        guideFlow2ToHouseCompletion();
     } else if (getFirstClaimableChestIdx(curRegion) !== null) {
         setFlow2Step('flow2_area_map_chest_ready');
     } else if (isRegionCleared(curRegion) && !isFlow2CastleCompleted()) {
@@ -919,6 +1158,7 @@ function finishFlow2TaskReveal() {
     const shouldKeepTaskPanelOpen = !!flow2.taskRevealUnlockedMissionId && !shouldCompleteArea;
 
     flow2.taskRevealActive = false;
+    flow2.taskRevealPhase = null;
     flow2.taskRevealCompletedMissionId = null;
     flow2.taskRevealUnlockedMissionId = null;
     flow2.taskRevealPendingAreaComplete = false;
@@ -933,11 +1173,26 @@ function finishFlow2TaskReveal() {
     }
 }
 
-function scheduleFlow2TaskRevealCleanup(delay = FLOW2_TASK_REVEAL_MS) {
+function advanceFlow2TaskReveal() {
+    if (!isFlow2Active()) return;
+    const flow2 = getFlow2State();
+    if (!flow2?.taskRevealActive) return;
+
+    if (flow2.taskRevealPhase === 'exit' && flow2.taskRevealUnlockedMissionId) {
+        flow2.taskRevealPhase = 'enter';
+        renderScreen();
+        scheduleFlow2TaskRevealCleanup(FLOW2_TASK_REVEAL_ENTER_MS);
+        return;
+    }
+
+    finishFlow2TaskReveal();
+}
+
+function scheduleFlow2TaskRevealCleanup(delay = FLOW2_TASK_REVEAL_ENTER_MS) {
     clearPendingFlow2TaskRevealCleanup();
     flow2TaskRevealTimer = setTimeout(() => {
         flow2TaskRevealTimer = null;
-        finishFlow2TaskReveal();
+        advanceFlow2TaskReveal();
     }, delay);
 }
 
@@ -1125,6 +1380,7 @@ function performFlow2CastleMissionBuild(showInsufficientPopup = true) {
     flow2.taskModalAutoAdvanceScheduled = false;
     resetFlow2MissionPresentationState(flow2);
     flow2.taskRevealActive = true;
+    flow2.taskRevealPhase = 'exit';
     flow2.taskRevealCompletedMissionId = completedMission.id;
     flow2.taskRevealUnlockedMissionId = nextMission?.id || null;
     flow2.taskRevealPendingAreaComplete = areaShouldComplete;
@@ -1147,7 +1403,7 @@ function performFlow2CastleMissionBuild(showInsufficientPopup = true) {
     renderScreen();
     spawnFloatingReward(`${completedMission.visual} Done`, window.innerWidth / 2, window.innerHeight / 2);
     showToast(`${completedMission.title} complete.`);
-    scheduleFlow2TaskRevealCleanup();
+    scheduleFlow2TaskRevealCleanup(nextMission ? FLOW2_TASK_REVEAL_EXIT_MS : FLOW2_TASK_REVEAL_FINAL_HOLD_MS);
     return true;
 }
 
@@ -1205,11 +1461,14 @@ function renderFlow2TaskPanel() {
     const flow2 = getFlow2State();
     const isGuidedBuildStep = isFlow3ClaimChestGuidedStep();
     const isPostBuildReveal = !!flow2.taskRevealActive;
+    const revealPhase = flow2.taskRevealPhase || 'exit';
     const showBuildArrow = shouldShowFlow3TutorialArrows() && flow2.mustBuildBeforeNextNode && !isPostBuildReveal;
     const visibleMissions = getFlow2TaskPanelVisibleMissions();
     const modalSubcopy = isPostBuildReveal
         ? (flow2.taskRevealUnlockedMissionId
-            ? 'Build complete. The finished task is clearing out and the next task is now ready.'
+            ? (revealPhase === 'enter'
+                ? 'Build complete. The next task is now ready.'
+                : 'Build complete.')
             : 'Build complete. Wrapping up the final task for this house.')
         : (isGuidedBuildStep
             ? 'Spend your crown to start the first house build.'
@@ -1218,7 +1477,9 @@ function renderFlow2TaskPanel() {
         const isActive = mission.status === FLOW2_CASTLE_TASK_STATUS.ACTIVE;
         const canAffordMission = state.crowns >= mission.cost;
         const isRevealDone = isPostBuildReveal && mission.id === flow2.taskRevealCompletedMissionId;
-        const isRevealActive = isPostBuildReveal && mission.id === flow2.taskRevealUnlockedMissionId;
+        const isRevealActive = isPostBuildReveal
+            && revealPhase === 'enter'
+            && mission.id === flow2.taskRevealUnlockedMissionId;
         const rowClass = `flow2-task-row ${mission.status}${isActive && isGuidedBuildStep ? ' guided-focus' : ''}${isRevealDone ? ' reveal-done' : ''}${isRevealActive ? ' reveal-active' : ''}`;
         const actionClass = `${isActive && showBuildArrow && canAffordMission ? ' flow2-target tutorial-arrow-target' : ''}${!canAffordMission ? ' disabled' : ''}`;
         const actionAttrs = canAffordMission
@@ -1230,7 +1491,7 @@ function renderFlow2TaskPanel() {
                 : `<button class="flow2-task-btn${actionClass}" ${actionAttrs}>Build</button>`)
             : '';
         const badge = mission.status === FLOW2_CASTLE_TASK_STATUS.DONE
-            ? '<div class="flow2-task-badge done">Done</div>'
+            ? '<div class="flow2-task-badge done"><span class="flow2-task-badge-check" aria-hidden="true">✓</span><span>Done</span></div>'
             : `<div class="flow2-task-badge ${mission.status}">${mission.status === FLOW2_CASTLE_TASK_STATUS.ACTIVE ? `Cost · 👑 ${mission.cost}` : 'Locked'}</div>`;
 
         return `
@@ -1249,9 +1510,10 @@ function renderFlow2TaskPanel() {
     const emptyState = !missionRows
         ? '<div class="flow2-task-empty">No active tasks to show right now.</div>'
         : '';
+    const currentCrownsText = state.crowns.toLocaleString();
 
     return `
-        <div class="flow2-task-modal${isGuidedBuildStep ? ' guided-build' : ''}${isPostBuildReveal ? ' post-build-reveal' : ''}">
+        <div class="flow2-task-modal${isGuidedBuildStep ? ' guided-build' : ''}${isPostBuildReveal ? ` post-build-reveal reveal-phase-${revealPhase}` : ''}">
             <div class="flow2-task-modal-head">
                 <div class="flow2-task-modal-copy">
                     <div class="flow2-task-modal-kicker">House Tasks</div>
@@ -1263,7 +1525,10 @@ function renderFlow2TaskPanel() {
             <aside class="flow2-task-panel">
                 <div class="flow2-task-panel-head">
                     <div class="flow2-task-panel-title">House</div>
-                    <div class="flow2-task-panel-progress">${getFlow2CastleProgressText()}</div>
+                    <div class="flow2-task-panel-meta">
+                        <div class="flow2-task-panel-wallet" aria-label="Current crowns">👑 ${currentCrownsText}</div>
+                        <div class="flow2-task-panel-progress">${getFlow2CastleProgressText()}</div>
+                    </div>
                 </div>
                 <div class="flow2-task-panel-list">
                     ${missionRows || emptyState}
@@ -1311,11 +1576,10 @@ function renderFlow2BuildCinematicOverlay() {
     if (!flow2?.buildCinematicOpen || !mission || !house || !curRegion) return;
 
     const stageArt = getFlow2CurrentHouseStageVisual();
-    const wasVisible = els.universalPanel.classList.contains('flow2-build-cinematic-panel')
-        && els.universalPanel.classList.contains('is-visible')
+    const wasVisible = els.universalPanel.classList.contains('is-visible')
         && !els.universalPanel.classList.contains('hidden');
 
-    els.universalPanel.className = `slide-panel flow2-build-cinematic-panel${wasVisible ? ' is-visible' : ''}`;
+    els.universalPanel.className = `slide-panel flow2-task-panel-modal flow2-build-cinematic-modal${wasVisible ? ' is-visible' : ''}`;
     els.universalPanel.innerHTML = `
         <div class="flow2-build-cinematic">
             <div class="flow2-build-cinematic-kicker">Construction Sequence</div>
@@ -1333,8 +1597,8 @@ function renderFlow2BuildCinematicOverlay() {
         </div>
     `;
     els.overlay.classList.remove('hidden');
-    els.overlay.classList.remove('flow2-task-panel-overlay');
-    els.overlay.classList.add('flow2-build-cinematic-overlay');
+    els.overlay.classList.remove('flow2-build-cinematic-overlay');
+    els.overlay.classList.add('flow2-task-panel-overlay');
     els.universalPanel.classList.remove('hidden');
 
     if (wasVisible) {
@@ -1374,33 +1638,6 @@ function syncScriptedFlowOverlays() {
             els.overlay.classList.add('hidden');
         }
     }
-}
-
-function renderFlow2MapCastleAnchor() {
-    const house = getFlow2CurrentHouse();
-    const activeMission = getFlow2ActiveMission();
-    const subtitle = isFlow2CastleCompleted()
-        ? 'House completed'
-        : (activeMission ? activeMission.title : 'Open house');
-    const stateClass = isFlow2CastleCompleted() ? 'done' : (activeMission ? 'active' : 'idle');
-    const shouldShowMapCastleArrow = shouldShowFlow3TutorialArrows()
-        && getFlow2State().mustBuildBeforeNextNode
-        && !getFlow2State().taskPanelOpen;
-    const targetClass = shouldShowMapCastleArrow ? ' flow2-target tutorial-arrow-target' : '';
-    const finalHouseStageVisual = house?.stageVisuals?.[Math.max(0, (house?.stageVisuals?.length || 1) - 1)] || '🏠';
-    const anchorIcon = isFlow2CastleCompleted()
-        ? finalHouseStageVisual
-        : getFlow2CurrentHouseStageVisual();
-
-    return `
-        <button class="flow2-map-castle-anchor ${stateClass}${targetClass}" onclick="openFlow2ActiveMission()">
-            <div class="flow2-map-castle-icon">${anchorIcon}</div>
-            <div class="flow2-map-castle-copy">
-                <div class="flow2-map-castle-title">House</div>
-                <div class="flow2-map-castle-sub">${subtitle}</div>
-            </div>
-        </button>
-    `;
 }
 
 function renderFlow2GoalPanel(curRegion) {
@@ -1449,10 +1686,6 @@ function renderFlow2KingdomHome(curRegion, theme) {
                 ${modeCenterTabsHtml()}
                 <div class="map-region-nav flow2-map-nav">
                     <div class="region-title">${curRegion.name}</div>
-                </div>
-                <div class="flow2-map-top-strip">
-                    ${renderFlow2MapCastleAnchor()}
-                    <div class="flow2-map-progress-pill">${getFlow2CastleProgressText()}</div>
                 </div>
             </div>
             <div class="flow2-map-content">
@@ -2307,9 +2540,10 @@ function renderTopBar() {
         const flow2 = getFlow2State();
         const universalDot = flow2.universalNotif ? '<span class="btn-notify-dot" aria-hidden="true"></span>' : '';
         const taskDot = flow2.taskNotif ? '<span class="btn-notify-dot" aria-hidden="true"></span>' : '';
+        const taskButtonClass = `btn btn-with-dot${shouldShowFlow3TaskButtonArrow() ? ' flow2-target tutorial-arrow-target topbar-task-arrow-target' : ''}`;
         els.topBarRight.innerHTML = `
             <button class="btn btn-with-dot" id="btn-flow2-universal" style="background: linear-gradient(to bottom, #8b5cf6, #5b21b6); border-color: #a78bfa;">🌍 Universal${universalDot}</button>
-            <button class="btn btn-with-dot" id="btn-flow2-task" style="background: linear-gradient(to bottom, #2563eb, #1d4ed8); border-color: #60a5fa;">📝 Tasks${taskDot}</button>
+            <button class="${taskButtonClass}" id="btn-flow2-task" style="background: linear-gradient(to bottom, #2563eb, #1d4ed8); border-color: #60a5fa;">📝 Tasks${taskDot}</button>
         `;
         document.getElementById('btn-flow2-universal').addEventListener('click', toggleUniversalPanel);
         document.getElementById('btn-flow2-task').addEventListener('click', openFlow2TaskPanel);
@@ -2669,6 +2903,7 @@ function switchMode(newMode) {
         els.mainContent.style.transition = 'opacity 0.22s ease, transform 0.22s ease';
         els.mainContent.style.opacity = '1';
         els.mainContent.style.transform = 'scale(1)';
+        maybeShowRegionStoryPopup();
     }, 130);
 }
 
@@ -2881,6 +3116,7 @@ function travelToRegion(idx) {
     closePanels();
     renderTopBar();
     renderScreen();
+    maybeShowRegionStoryPopup(idx);
 }
 
 function getCastleUnlockHint(idx) {
@@ -3057,6 +3293,7 @@ function claimChest(chestIdx) {
 function showPopup(title, msg, onContinueStr = "closePopup()", isBoss = false) {
     clearPendingPopupHide();
     state.popupLocked = false;
+    resetPopupChrome();
     let border = isBoss ? '#ef4444' : 'var(--gold)';
     els.popup.innerHTML = `
         <h2 style="color: ${border}">${title}</h2>
@@ -3082,6 +3319,7 @@ function closePopup(force = false) {
     els.overlay.classList.add('hidden');
     // Add hidden back after transition ends
     popupHideTimer = setTimeout(() => {
+        resetPopupChrome();
         els.popup.classList.add('hidden');
         popupHideTimer = null;
     }, 350);
@@ -3441,7 +3679,7 @@ function startGame(flowId) {
     updateTabs();
     renderTopBar();
     renderScreen();
-
+    maybeShowRegionStoryPopup();
 }
 
 function goBackToFlowSelection() {
