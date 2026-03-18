@@ -11,6 +11,7 @@ Lưu các kế hoạch triển khai theo từng tính năng.
   - Checklist QA
 
 ## Danh sách plan
+- [2026-03-18-replace-story-popup-images-first-3-areas.md](./2026-03-18-replace-story-popup-images-first-3-areas.md)
 - [2026-03-18-task-complete-tick-and-next-task-slide-up.md](./2026-03-18-task-complete-tick-and-next-task-slide-up.md)
 - [2026-03-18-task-reveal-simplify-to-fade.md](./2026-03-18-task-reveal-simplify-to-fade.md)
 - [2026-03-18-smooth-task-reveal-animation.md](./2026-03-18-smooth-task-reveal-animation.md)

@@ -76,7 +76,7 @@ const REGION_HOUSE_BLUEPRINTS = {
 };
 const REGION_STORY_POPUPS = {
     home: {
-        imageUrl: 'https://res.cloudinary.com/db37npbp6/image/upload/v1773850606/Gemini_Generated_Image_b2ziwdb2ziwdb2zi_mzetm4.png',
+        imageUrl: './assets/images/home_story_comic.png',
         title: 'Home Chapter',
         caption: 'The village asks for a safe house before sunset, and your crew answers with hammers, timber, and a little luck.',
         ctaLabel: 'Enter Home',
@@ -476,6 +476,7 @@ function getInitialState() {
         coins: 402685,
         crowns: 500,
         popupLocked: false,
+        kingdomTabSeen: false,
         mode: 'casino', // 'casino' | 'kingdom'
         screen: 'home', // 'home' | 'casino-slot' | 'kingdom-slot' | 'castle'
 
@@ -2568,8 +2569,8 @@ function modeCenterTabsHtml() {
     if (!shouldShowModeTabs()) return '';
     return `
         <div class="mode-tabs-center">
-            <button class="mode-tab-btn ${state.mode === 'casino' ? 'active' : ''}" onclick="switchMode('casino')">\ud83c\udfb0 Casino</button>
-            <button class="mode-tab-btn ${state.mode === 'kingdom' ? 'active' : ''}" onclick="switchMode('kingdom')">\ud83c\udff0 Kingdom</button>
+            <button class="mode-tab-btn ${state.mode === 'casino' ? 'active' : ''}" onclick="switchMode('casino')">\ud83c\udfb0 Classic</button>
+            <button class="mode-tab-btn ${state.mode === 'kingdom' ? 'active' : ''}" onclick="switchMode('kingdom')">\ud83c\udff0 Kingdom ${!state.kingdomTabSeen ? '<span class="tab-new-badge">NEW</span>' : ''}</button>
         </div>
     `;
 }
@@ -2890,6 +2891,10 @@ function switchMode(newMode) {
         }
     }
 
+    if (newMode === 'kingdom' && !state.kingdomTabSeen) {
+        state.kingdomTabSeen = true;
+    }
+    
     state.mode = newMode;
     state.screen = 'home';
     renderTopBar();

@@ -1,0 +1,22 @@
+flowchart LR
+    Pool[(Level Design Pool)]
+
+    subgraph InputSignals[Gameplay signals]
+        CasinoSig[Casino outcomes<br/>retention, economy, win rate]
+        KingdomSig[Kingdom outcomes<br/>node clear rate, boss friction, crown usage]
+    end
+
+    subgraph RuntimeUse[Runtime usage]
+        CasinoUse[Slot machines use pool profiles]
+        KingdomUse[Kingdom nodes and bosses use pool profiles]
+    end
+
+    Tuning[Design tuning and balancing]
+
+    Pool --> CasinoUse
+    Pool --> KingdomUse
+    CasinoUse --> CasinoSig
+    KingdomUse --> KingdomSig
+    CasinoSig --> Tuning
+    KingdomSig --> Tuning
+    Tuning --> Pool

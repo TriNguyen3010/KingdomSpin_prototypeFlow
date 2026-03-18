@@ -1,24 +1,31 @@
 flowchart TD
     Start([Player enters game])
     Choose{Choose mode}
+    LevelPool[(Level Design Pool)]
+    Balance[Balance and tuning loop]
+    SharedCoins[(Coins pool)]
+    SharedCrowns[(Crowns pool)]
 
     Start --> Choose
+    Start --> LevelPool
 
     Choose --> Casino
     Choose --> Kingdom
 
     subgraph CasinoMode[Casino Mode]
         Casino[Play slot machines]
+        CasinoContent[Machine gameplay profile<br/>from Level Design Pool]
         CasinoReward[Get coins + XP]
         CasinoLevel[Level up casino account]
         CasinoUnlock[Unlock more machines]
         CasinoLoop[Higher machine variety and better progression pace]
 
-        Casino --> CasinoReward --> CasinoLevel --> CasinoUnlock --> CasinoLoop --> Casino
+        Casino --> CasinoContent --> CasinoReward --> CasinoLevel --> CasinoUnlock --> CasinoLoop --> Casino
     end
 
     subgraph KingdomMode[Kingdom Mode]
         Kingdom[Play region nodes]
+        KingdomContent[Node and boss gameplay profile<br/>from Level Design Pool]
         NodeClear[Clear node: +crown]
         BossClear[Clear boss: unlock next region + next castle]
         Building[Go to Building]
@@ -27,13 +34,21 @@ flowchart TD
         ClaimBonus[Manual claim completion bonus: coins + crowns]
         KingdomLoop[Use rewards to keep progressing regions and buildings]
 
-        Kingdom --> NodeClear --> BossClear --> Building --> BuildSlots --> CastleDone --> ClaimBonus --> KingdomLoop --> Kingdom
+        Kingdom --> KingdomContent --> NodeClear --> BossClear --> Building --> BuildSlots --> CastleDone --> ClaimBonus --> KingdomLoop --> Kingdom
     end
 
-    CasinoReward --> SharedCoins[(Coins pool)]
+    LevelPool --> CasinoContent
+    LevelPool --> KingdomContent
+
+    CasinoReward --> SharedCoins
     ClaimBonus --> SharedCoins
-    NodeClear --> SharedCrowns[(Crowns pool)]
+    NodeClear --> SharedCrowns
     ClaimBonus --> SharedCrowns
 
     SharedCoins --> Casino
     SharedCrowns --> BuildSlots
+
+    CasinoReward --> Balance
+    BossClear --> Balance
+    BuildSlots --> Balance
+    Balance --> LevelPool
